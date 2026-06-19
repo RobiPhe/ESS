@@ -90,8 +90,8 @@ nav{padding:10px 8px;flex:1}
 .b-national{background:var(--red-bg);color:var(--red);border:1px solid var(--red-b)}
 .b-joint{background:var(--orange-bg);color:var(--orange)}
 .tw-wrap{border-radius:var(--r);border:1px solid var(--border);overflow:hidden}
-.tw-scroll{overflow:auto;max-height:580px}
-table{width:100%;border-collapse:collapse;font-size:13px}
+.tw-scroll{overflow:auto;max-height:580px;-webkit-overflow-scrolling:touch}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
 thead tr{background:var(--bg3)}
 th{padding:10px 13px;text-align:left;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;position:sticky;top:0;z-index:10;background:var(--bg3)}
 td{padding:10px 13px;border-top:1px solid var(--border);color:var(--text)}
@@ -129,8 +129,14 @@ input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ac
 .empty-level{padding:12px 16px;font-size:13px;color:var(--text3);font-style:italic}
 .mo{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .2s}
 .mo.show{opacity:1;pointer-events:all}
-.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rx);padding:26px 28px;width:580px;max-width:100%;max-height:90vh;overflow-y:auto;transform:scale(.96) translateY(8px);transition:transform .2s}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rx);padding:26px 28px;width:580px;max-width:100%;max-height:90vh;overflow-y:auto;transform:scale(.96) translateY(8px);transition:transform .2s;-webkit-overflow-scrolling:touch}
 .mo.show .modal{transform:scale(1) translateY(0)}
+@media(max-width:768px){
+  .mo{padding:12px;align-items:flex-end}
+  .modal{width:100%;max-height:88vh;border-radius:20px 20px 0 0;padding:22px 18px 32px}
+  .modal-foot{flex-direction:column}
+  .modal-foot .btn{width:100%;justify-content:center}
+}
 .modal-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;margin-bottom:4px}
 .modal-sub{color:var(--text2);font-size:12px;margin-bottom:20px}
 .modal-foot{display:flex;gap:8px;margin-top:20px}
@@ -158,7 +164,105 @@ input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ac
 .cal-row{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);font-size:13px}.cal-row:last-child{border-bottom:none}
 .log-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
 .log-accrual{background:var(--green)}.log-used{background:var(--accent2)}.log-expired{background:var(--red)}.log-notif{background:var(--yellow)}
-/* ADMIN DASHBOARD */
+/* ══ RESPONSIVE — SIDEBAR MOBILE DRAWER ══ */
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99;backdrop-filter:blur(3px)}
+.sidebar-overlay.show{display:block}
+.hamburger{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:var(--r);cursor:pointer;color:var(--text2);border:1px solid var(--border);background:var(--bg3);flex-shrink:0}
+.hamburger svg{width:18px;height:18px}
+.sidebar-close{display:none;position:absolute;top:14px;right:12px;width:30px;height:30px;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,.12);cursor:pointer;color:rgba(255,255,255,.5);font-size:16px}
+
+@media(max-width:768px){
+  /* Sidebar jadi drawer */
+  .sidebar{transform:translateX(-100%);transition:transform .25s cubic-bezier(.4,0,.2,1);width:260px}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 40px rgba(0,0,0,.5)}
+  .sidebar-close{display:flex}
+  .topbar{left:0}
+  .main{margin-left:0;padding:16px 14px;margin-top:54px}
+  .hamburger{display:flex}
+  /* Header action area supaya ga overflow */
+  .topbar-right{display:flex;align-items:center;gap:10px}
+  /* Page header stack vertical di mobile */
+  .page-hdr{flex-direction:column;align-items:flex-start;gap:10px}
+  .page-hdr .btn{width:100%;justify-content:center}
+  /* Grid stats 2 kolom di mobile */
+  .g4{grid-template-columns:1fr 1fr}
+  /* Admin stat 2 col */
+  .adm-grid{grid-template-columns:1fr 1fr}
+  /* Chart grids jadi 1 col */
+  .chart-grid,.chart-grid-3{grid-template-columns:1fr}
+  /* Stat val lebih kecil */
+  .adm-stat-val{font-size:26px}
+  .stat-val{font-size:22px}
+  /* G2i form grid 1 col */
+  .g2i{grid-template-columns:1fr}
+  /* Leave saldo grid 2 col */
+  #leave-saldo > div{grid-template-columns:1fr 1fr !important}
+  /* Table scrollable */
+  .tw-wrap{border-radius:var(--r)}
+  /* Modal full width */
+  .modal{padding:20px 16px;border-radius:var(--rl)}
+  /* Toast bottom-center */
+  #toast{left:14px;right:14px;bottom:16px;max-width:unset;text-align:center}
+  /* Cal status sembunyikan text panjang */
+  .cal-status{font-size:11px;padding:4px 9px}
+  /* Notif popup full width */
+  .notif-popup{right:8px;left:8px;width:auto}
+  /* QF bar scroll */
+  .qf-bar{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+  .qf-bar::-webkit-scrollbar{height:0}
+  /* Bulk del bar */
+  .bulk-del-bar{flex-wrap:wrap;gap:7px}
+  /* Page title lebih kecil */
+  .page-title{font-size:17px}
+  /* Lc hdr stack */
+  .lc-hdr{flex-direction:column;gap:7px}
+  .lc-hdr .badge{align-self:flex-start}
+  /* Alert list di dashboard */
+  .alert-row{flex-direction:column;align-items:flex-start;gap:5px}
+  /* Login box */
+  .login-box{padding:32px 22px}
+  /* Filter row hide on mobile — show toggle */
+  .filter-row{display:none}
+  .filter-row.show{display:table-row}
+}
+
+@media(max-width:480px){
+  /* Extra small — stat 1 col */
+  .g4{grid-template-columns:1fr}
+  .adm-grid{grid-template-columns:1fr}
+  #leave-saldo > div{grid-template-columns:1fr 1fr !important}
+  .adm-stat-val{font-size:28px}
+  /* Chart tinggi lebih kecil */
+  .chart-wrap[style*="220px"]{height:180px !important}
+  .chart-wrap[style*="200px"]{height:160px !important}
+}
+
+@media(min-width:769px) and (max-width:1024px){
+  /* Tablet — sidebar tetap tapi lebih sempit */
+  .sidebar{width:200px}
+  .topbar{left:200px}
+  .main{margin-left:200px;padding:20px 18px}
+  .g4{grid-template-columns:1fr 1fr}
+  .adm-grid{grid-template-columns:1fr 1fr}
+  .chart-grid-3{grid-template-columns:1fr}
+  .g2i{grid-template-columns:1fr 1fr}
+  .page-hdr .btn{font-size:11px;padding:6px 12px}
+}
+
+/* Tambahan: swipe hint untuk tabel di mobile */
+@media(max-width:768px){
+  .tw-wrap::after{content:'← geser untuk lihat lebih →';display:block;text-align:center;font-size:10px;color:var(--text3);padding:5px;background:var(--bg3)}
+  /* Level row di Manajemen Atasan */
+  .level-row{flex-wrap:wrap;gap:7px}
+  /* Dept block head */
+  .dept-block-head{flex-direction:column;align-items:flex-start;gap:7px}
+  /* Upload area padding lebih kecil */
+  .upload-area{padding:22px 16px}
+  /* Date row */
+  .date-row{flex-direction:column;gap:5px}
+  .date-row input{flex:none;width:100%}
+}
+
 .adm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}
 @media(max-width:1100px){.adm-grid{grid-template-columns:1fr 1fr}}
 .adm-stat{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:18px 20px;position:relative;overflow:hidden}
@@ -197,11 +301,15 @@ input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ac
   </div>
 </div>
 <div id="app">
-  <div class="sidebar">
+  <!-- Overlay untuk mobile drawer -->
+  <div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
+  <div class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <div class="sidebar-logo-wrap"><img class="sidebar-logo-img" id="sb-img" src="" alt="O"><div class="sidebar-app-name">ESS</div></div>
       <div class="sb-name" id="sb-name"></div><div class="sb-role" id="sb-role"></div><div class="sb-nik" id="sb-nik"></div>
     </div>
+    <!-- Close button mobile -->
+    <div class="sidebar-close" onclick="closeSidebar()">✕</div>
     <nav id="nav-menu"></nav>
     <div class="nav-footer">
       <div class="nav-logout" onclick="doLogout()">
@@ -210,6 +318,11 @@ input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ac
     </div>
   </div>
   <div class="topbar">
+    <!-- Hamburger hanya muncul di mobile -->
+    <div class="hamburger" id="hamburger" onclick="openSidebar()">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </div>
+    <div style="flex:1"></div>
     <div id="cal-indicator" style="display:none"></div>
     <span class="theme-lbl" id="theme-lbl">🌙</span>
     <div class="theme-toggle" onclick="toggleTheme()"><div class="theme-knob"></div></div>
@@ -595,11 +708,31 @@ function buildApp(){
   }
 }
 
+/* MOBILE FILTER TOGGLE */
+function toggleFilterRow(tableId){
+  const fr=document.querySelector(`#${tableId} .filter-row`);
+  if(fr)fr.classList.toggle('show');
+}
+
+/* MOBILE SIDEBAR */
+function openSidebar(){
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sb-overlay').classList.add('show');
+  document.body.style.overflow='hidden';
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sb-overlay').classList.remove('show');
+  document.body.style.overflow='';
+}
+
 function showPage(id){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const ni=document.getElementById('nav-'+id);if(ni)ni.classList.add('active');
   const pg=document.getElementById('page-'+id);if(pg){pg.classList.add('active');refreshPage(id)}
+  // Auto-close sidebar on mobile after navigation
+  if(window.innerWidth<=768)closeSidebar();
 }
 
 function refreshPage(id){
@@ -665,14 +798,20 @@ function pgTeamLeave(){return`<div class="page" id="page-teamleave">
 function pgAdminLeaves(){return`<div class="page" id="page-admin-leaves">
   <div class="page-hdr">
     <div><div class="page-title">Semua Pengajuan Cuti</div><div class="page-sub">Monitoring seluruh aktivitas pengajuan</div></div>
-    <button class="btn btn-excel btn-sm" onclick="exportLeaves()">⬇ Export Excel</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="toggleFilterRow('page-admin-leaves')">🔍 Filter</button>
+      <button class="btn btn-excel btn-sm" onclick="exportLeaves()">⬇ Export</button>
+    </div>
   </div><div id="al-list"></div>
 </div>`}
 
 function pgAdminBalance(){return`<div class="page" id="page-admin-balance">
   <div class="page-hdr">
     <div><div class="page-title">Saldo Cuti Karyawan</div><div class="page-sub">Saldo Y1/Y2/Y3 dan cuti besar per karyawan</div></div>
-    <button class="btn btn-excel btn-sm" onclick="exportBalance()">⬇ Export Excel</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="toggleFilterRow('page-admin-balance')">🔍 Filter</button>
+      <button class="btn btn-excel btn-sm" onclick="exportBalance()">⬇ Export</button>
+    </div>
   </div><div id="ab-list"></div>
 </div>`}
 
