@@ -2,8 +2,9 @@
 <html lang="id" data-theme="dark">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ESS — OHGISHI v5</title>
+<title>ESS — OHGISHI v6</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 [data-theme="dark"]{--bg:#0f0f13;--bg2:#16161d;--bg3:#1e1e28;--bg4:#252530;--border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);--text:#e8e8f0;--text2:#9090a8;--text3:#5a5a70;--accent2:#2d5be3;--accent-bg:rgba(45,91,227,.13);--shadow:0 4px 24px rgba(0,0,0,.4);--sidebar-bg:#0d1426;--topbar-bg:#0f0f13;--input-bg:#1e1e28}
 [data-theme="light"]{--bg:#f0f2f8;--bg2:#fff;--bg3:#f5f6fa;--bg4:#e8eaf2;--border:rgba(0,0,0,.08);--border2:rgba(0,0,0,.15);--text:#1a1a2e;--text2:#5a6070;--text3:#9298a8;--accent2:#1a4fd6;--accent-bg:rgba(26,79,214,.08);--shadow:0 4px 24px rgba(0,0,0,.08);--sidebar-bg:#0d1e5c;--topbar-bg:#fff;--input-bg:#f5f6fa}
@@ -157,6 +158,31 @@ input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ac
 .cal-row{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--border);font-size:13px}.cal-row:last-child{border-bottom:none}
 .log-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
 .log-accrual{background:var(--green)}.log-used{background:var(--accent2)}.log-expired{background:var(--red)}.log-notif{background:var(--yellow)}
+/* ADMIN DASHBOARD */
+.adm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}
+@media(max-width:1100px){.adm-grid{grid-template-columns:1fr 1fr}}
+.adm-stat{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:18px 20px;position:relative;overflow:hidden}
+.adm-stat::after{content:'';position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;opacity:.06}
+.adm-stat.s-blue::after{background:var(--accent2)}.adm-stat.s-green::after{background:var(--green)}
+.adm-stat.s-yellow::after{background:var(--yellow)}.adm-stat.s-red::after{background:var(--red)}
+.adm-stat-ico{font-size:22px;margin-bottom:8px}
+.adm-stat-val{font-family:'Syne',sans-serif;font-size:32px;font-weight:700;line-height:1}
+.adm-stat-lbl{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-top:5px}
+.adm-stat-sub{font-size:11px;color:var(--text3);margin-top:3px}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-grid-3{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:1100px){.chart-grid,.chart-grid-3{grid-template-columns:1fr}}
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px}
+.chart-title{font-size:13px;font-weight:600;margin-bottom:4px}
+.chart-sub{font-size:11px;color:var(--text2);margin-bottom:16px}
+.chart-wrap{position:relative;width:100%}
+.alert-list{display:flex;flex-direction:column;gap:7px}
+.alert-row{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:var(--bg3);border-radius:var(--r);font-size:12px;border-left:3px solid transparent}
+.alert-row.al-red{border-color:var(--red)}.alert-row.al-yellow{border-color:var(--yellow)}
+.alert-name{font-weight:500;margin-bottom:1px}.alert-dept{color:var(--text2);font-size:11px}
+/* USER MANAGEMENT */
+.user-role-admin{background:rgba(45,91,227,.15);color:var(--accent2);border:1px solid rgba(45,91,227,.3)}
+.user-role-staff{background:rgba(34,197,94,.12);color:var(--green);border:1px solid var(--green-b)}
 </style>
 </head>
 <body>
@@ -291,7 +317,7 @@ function checkBigLeaveExpiry(){
           const expired=emps[i].bigLeave;emps[i].bigLeave=0;
           const log=G('ess5_biglog',[]);log.push({empNik:e.nik,type:'expired',date:now.toISOString(),amount:expired,note:`${expired} hari saldo cuti besar siklus ke-${c} hangus — 3 tahun tidak digunakan`});S('ess5_biglog',log);S(key,true);changed=true;
           pushNotif(e.nik,'⚠️ Cuti Besar Hangus',`${expired} hari saldo cuti besar hangus per ${exp.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}.`,null);
-          G('ess5_users',[]).filter(u=>u.role==='admin').forEach(u=>{const ae=G('ess5_emps',[]).find(x=>x.nik===u.nik);if(ae)pushNotif(ae.nik,'Info: Cuti Besar Hangus',`${e.name} (${e.nik}): ${expired} hari cuti besar hangus.`,null)});
+          G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>{pushNotif(u.nik,'Info: Cuti Besar Hangus',`${e.name} (${e.nik}): ${expired} hari cuti besar hangus.`,null)});
         }
       }
     }
@@ -330,7 +356,10 @@ function checkCalReminder(){
   const now=new Date();if(now.getMonth()<10)return;
   const ny=now.getFullYear()+1;if(G('ess5_calendar',{})[ny]!==undefined)return;
   const key=`calrem_${ny}_m${now.getMonth()}`;if(G(key,false))return;
-  G('ess5_users',[]).filter(u=>u.role==='admin').forEach(u=>{const ae=G('ess5_emps',[]).find(e=>e.nik===u.nik);if(ae)pushNotif(ae.nik,'📅 Kalender Kerja Belum Diinput',`Kalender kerja tahun ${ny} belum diinput. Segera upload setelah perundingan serikat pekerja selesai (paling lambat Desember ${now.getFullYear()}).`,null)});
+  // Notify all admin sysusers
+  G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>{
+    pushNotif(u.nik,'📅 Kalender Kerja Belum Diinput',`Kalender kerja tahun ${ny} belum diinput. Segera upload setelah perundingan serikat pekerja selesai (paling lambat Desember ${now.getFullYear()}).`,null);
+  });
   S(key,true);
 }
 
@@ -353,8 +382,8 @@ function yearShift(){
 /* INIT DATA */
 function initData(){
   if(G('ess5_init',false))return;
+  // Karyawan — tidak termasuk admin/staff sistem
   const emps=[
-    {nik:'2209001',name:'Admin Sistem',dept:'IT',role:'admin',annY1:12,annY2:0,annY3:0,bigLeave:0,status:'tetap',joinDate:'2022-09-01',permanentDate:'2022-09-01'},
     {nik:'2209002',name:'Budi Santoso',dept:'HR',role:'employee',annY1:8,annY2:4,annY3:2,bigLeave:6,status:'tetap',joinDate:'2022-09-01',permanentDate:'2023-01-01'},
     {nik:'2209003',name:'Siti Rahayu',dept:'Finance',role:'employee',annY1:10,annY2:3,annY3:1,bigLeave:6,status:'tetap',joinDate:'2022-09-15',permanentDate:'2023-02-01'},
     {nik:'2209004',name:'Dewi Lestari',dept:'HR',role:'employee',annY1:8,annY2:0,annY3:0,bigLeave:0,status:'kontrak',joinDate:'2022-09-20',permanentDate:null},
@@ -369,11 +398,17 @@ function initData(){
     {nik:'2209002',dept:'Warehouse',level:2,position:'manager',name:'Budi Santoso'},
     {nik:'2209002',dept:'HR',level:1,position:'manager',name:'Budi Santoso'},
     {nik:'2209003',dept:'Finance',level:1,position:'manager',name:'Siti Rahayu'},
-    {nik:'2209001',dept:'IT',level:1,position:'manager',name:'Admin Sistem'},
+    {nik:'2209005',dept:'IT',level:1,position:'manager',name:'Riko Prasetyo'},
   ];
   const used=[];
-  const users=emps.map(e=>{const u=autoUser(e.name,used);used.push(u);return{nik:e.nik,username:u,password:'12345',role:e.role}});
-  S('ess5_emps',emps);S('ess5_sups',sups);S('ess5_users',users);
+  const empUsers=emps.map(e=>{const u=autoUser(e.name,used);used.push(u);return{nik:e.nik,username:u,password:'12345',role:'employee'}});
+  // System users: admin & staff — terpisah dari tabel karyawan
+  const sysUsers=[
+    {nik:'SYS001',username:'admin',password:'12345',role:'admin',name:'Admin Sistem',createdAt:new Date().toISOString()},
+  ];
+  S('ess5_emps',emps);S('ess5_sups',sups);
+  S('ess5_users',empUsers);
+  S('ess5_sysusers',sysUsers);
   S('ess5_leaves',[]);S('ess5_depts',['IT','HR','Finance','PPIC','Warehouse','Procurement']);
   S('ess5_notifs',[]);S('ess5_biglog',[]);S('ess5_calendar',{});
   S('ess5_yearshift',new Date().getFullYear());S('ess5_sel_emps',[]);S('ess5_init',true);
@@ -387,8 +422,30 @@ function autoUser(name,used){
 
 /* AUTH */
 let CU=null,CE=null;
+// CU = user auth record, CE = employee profile (null for admin/staff)
+// isSysUser() = true when logged in as admin or staff (no employee record)
+function isSysUser(){return CU&&(CU.role==='admin'||CU.role==='staff')}
+
 function doLogin(){
   const u=document.getElementById('lu').value.trim(),p=document.getElementById('lp').value;
+  // Check system users (admin/staff) first
+  const sysFound=G('ess5_sysusers',[]).find(x=>x.username===u&&x.password===p);
+  if(sysFound){
+    CU=sysFound;CE=null;
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('sb-img').src=LOGO;
+    yearShift();checkCalReminder();
+    buildApp();
+    if(window._ar)clearInterval(window._ar);
+    window._ar=setInterval(()=>{
+      checkCalReminder();
+      const active=document.querySelector('.page.active');
+      if(active)refreshPage(active.id.replace('page-',''));
+    },60000);
+    return;
+  }
+  // Check employee users
   const found=G('ess5_users',[]).find(x=>x.username===u&&x.password===p);
   if(!found){document.getElementById('lerr').style.display='block';return}
   const emp=G('ess5_emps',[]).find(e=>e.nik===found.nik);
@@ -432,14 +489,16 @@ function pushNotif(targetNik,title,body,leaveId){
   S('ess5_notifs',notifs);if(CE&&CE.nik===targetNik)refreshBadge();
 }
 function refreshBadge(){
-  if(!CE)return;
-  const isSup=G('ess5_sups',[]).some(s=>s.nik===CE.nik);
-  if(isSup||CE.role==='admin')document.getElementById('bell').style.display='flex';
-  const unread=G('ess5_notifs',[]).filter(n=>n.targetNik===CE.nik&&!n.read).length;
-  const dot=document.getElementById('bell-dot');if(dot)dot.classList.toggle('show',unread>0);
-  const badge=document.getElementById('approval-badge');
-  if(badge){const cnt=getPendingApprovals().length;badge.textContent=cnt;badge.classList.toggle('show',cnt>0)}
-  if(CE.role==='admin'){const ci=document.getElementById('cal-indicator');if(ci){const st=getCalStatus();ci.style.display='flex';ci.innerHTML=`<span class="cal-status ${st.cls}" onclick="showPage('admin-calendar')">${st.txt}</span>`}}
+  if(!CE&&!isSysUser())return;
+  if(!isSysUser()){
+    const isSup=G('ess5_sups',[]).some(s=>s.nik===CE.nik);
+    if(isSup){document.getElementById('bell').style.display='flex'}
+    const unread=G('ess5_notifs',[]).filter(n=>n.targetNik===CE.nik&&!n.read).length;
+    const dot=document.getElementById('bell-dot');if(dot)dot.classList.toggle('show',unread>0);
+    const badge=document.getElementById('approval-badge');
+    if(badge){const cnt=getPendingApprovals().length;badge.textContent=cnt;badge.classList.toggle('show',cnt>0)}
+  }
+  // Calendar indicator — employee admin role no longer exists, this is handled per-context
 }
 function toggleNotif(){const p=document.getElementById('notif-popup');p.classList.toggle('show');if(p.classList.contains('show'))renderNotifList()}
 function renderNotifList(){
@@ -478,27 +537,62 @@ function NI(id,lbl,icon){return`<div class="nav-item" id="nav-${id}" onclick="sh
 
 /* APP SHELL */
 function buildApp(){
-  const sups=G('ess5_sups',[]);const isSup=sups.some(s=>s.nik===CE.nik);const isAdmin=CE.role==='admin';
-  document.getElementById('sb-name').textContent=CE.name;
-  document.getElementById('sb-nik').textContent='NIK: '+CE.nik;
-  document.getElementById('sb-role').textContent=(isAdmin?'Administrator':isSup?'Atasan/Karyawan':'Karyawan')+' · '+CE.dept;
-  if(isSup||isAdmin){document.getElementById('bell').style.display='flex';refreshBadge()}
-  let nav='<div class="nav-sec">Utama</div>'+NI('dashboard','Dashboard','home')+NI('leave','Cuti Saya','cal')+NI('changepass','Ubah Password','key');
-  if(isSup||isAdmin)nav+=`<div class="nav-sec">Atasan</div>`+NI('approval','Approval Cuti','check')+NI('teamleave','Saldo Tim','users')+NI('sup-leavelog','Log Pengajuan Cuti','log');
-  if(isAdmin)nav+=`<div class="nav-sec">Admin</div>`+NI('admin-leaves','Semua Pengajuan','clip')+NI('admin-balance','Saldo Cuti','wallet')+NI('admin-bulk','Update Masal','ref')+NI('admin-sup','Manajemen Atasan','uc')+NI('admin-emp','Manajemen Karyawan','id')+NI('admin-dept','Manajemen Departemen','bldg')+NI('admin-calendar','Kalender Kerja','calicon')+NI('admin-biglog','Log Cuti Besar','log')+NI('admin-upload','Upload Data','up');
-  document.getElementById('nav-menu').innerHTML=nav;
+  const sysU=isSysUser();
+  const isAdmin=CU.role==='admin';
+  const isStaff=CU.role==='staff';
+  const sups=G('ess5_sups',[]);
+  const isSup=!sysU&&CE&&sups.some(s=>s.nik===CE.nik);
+
+  // Sidebar info
+  if(sysU){
+    document.getElementById('sb-name').textContent=CU.name||CU.username;
+    document.getElementById('sb-nik').textContent='ID: '+CU.nik;
+    document.getElementById('sb-role').textContent=(isAdmin?'Administrator':'Staff Admin')+' · Sistem';
+  } else {
+    document.getElementById('sb-name').textContent=CE.name;
+    document.getElementById('sb-nik').textContent='NIK: '+CE.nik;
+    document.getElementById('sb-role').textContent=(isSup?'Atasan/Karyawan':'Karyawan')+' · '+CE.dept;
+  }
+
+  // Bell only for supervisors & employees (not sys users)
+  if(!sysU&&(isSup)){document.getElementById('bell').style.display='flex';refreshBadge()}
+  else {document.getElementById('bell').style.display='none'}
+
+  let nav='';
   const cy=new Date().getFullYear();
   const opts=[0,1,2,3].map((i)=>`<option value="${cy+i-1}">${cy+i-1}</option>`).join('');
-  document.getElementById('main-content').innerHTML=[
-    pgDash(),pgLeave(),pgChangePass(),
-    (isSup||isAdmin)?pgApproval():'',
-    (isSup||isAdmin)?pgTeamLeave():'',
-    (isSup||isAdmin)?pgSupLeaveLog():'',
-    isAdmin?pgAdminLeaves():'',isAdmin?pgAdminBalance():'',isAdmin?pgAdminBulk():'',
-    isAdmin?pgAdminSup():'',isAdmin?pgAdminEmp():'',isAdmin?pgAdminDept():'',
-    isAdmin?pgAdminCalendar(opts):'',isAdmin?pgAdminBigLog():'',isAdmin?pgAdminUpload():''
-  ].join('');
-  showPage('dashboard');
+
+  if(sysU){
+    // Admin/Staff: hanya menu sistem, tidak ada cuti pribadi
+    nav=`<div class="nav-sec">Dashboard</div>`+NI('adm-dashboard','Dashboard','home');
+    nav+=`<div class="nav-sec">Manajemen Cuti</div>`+NI('admin-leaves','Semua Pengajuan','clip')+NI('admin-balance','Saldo Cuti','wallet')+NI('admin-bulk','Update Masal','ref')+NI('admin-biglog','Log Cuti Besar','log');
+    nav+=`<div class="nav-sec">Manajemen Data</div>`+NI('admin-sup','Manajemen Atasan','uc')+NI('admin-emp','Manajemen Karyawan','id')+NI('admin-dept','Manajemen Departemen','bldg')+NI('admin-calendar','Kalender Kerja','calicon')+NI('admin-upload','Upload Data','up');
+    if(isAdmin)nav+=`<div class="nav-sec">Sistem</div>`+NI('admin-sysuser','Manajemen User','id')+NI('changepass','Ubah Password','key');
+    else nav+=`<div class="nav-sec">Akun</div>`+NI('changepass','Ubah Password','key');
+
+    document.getElementById('nav-menu').innerHTML=nav;
+    document.getElementById('main-content').innerHTML=[
+      pgAdmDashboard(),
+      pgAdminLeaves(),pgAdminBalance(),pgAdminBulk(),pgAdminBigLog(),
+      pgAdminSup(),pgAdminEmp(),pgAdminDept(),pgAdminCalendar(opts),pgAdminUpload(),
+      isAdmin?pgAdminSysUser():'',
+      pgChangePass()
+    ].join('');
+    showPage('adm-dashboard');
+
+  } else {
+    // Employee / Supervisor
+    nav='<div class="nav-sec">Utama</div>'+NI('dashboard','Dashboard','home')+NI('leave','Cuti Saya','cal')+NI('changepass','Ubah Password','key');
+    if(isSup)nav+=`<div class="nav-sec">Atasan</div>`+NI('approval','Approval Cuti','check')+NI('teamleave','Saldo Tim','users')+NI('sup-leavelog','Log Pengajuan Cuti','log');
+    document.getElementById('nav-menu').innerHTML=nav;
+    document.getElementById('main-content').innerHTML=[
+      pgDash(),pgLeave(),pgChangePass(),
+      isSup?pgApproval():'',
+      isSup?pgTeamLeave():'',
+      isSup?pgSupLeaveLog():''
+    ].join('');
+    showPage('dashboard');
+  }
 }
 
 function showPage(id){
@@ -509,10 +603,15 @@ function showPage(id){
 }
 
 function refreshPage(id){
-  const map={dashboard:renderDash,leave:renderLeave,approval:renderApproval,teamleave:renderTeamLeave,
+  const map={
+    dashboard:renderDash,leave:renderLeave,approval:renderApproval,teamleave:renderTeamLeave,
+    'adm-dashboard':renderAdmDashboard,
     'admin-leaves':renderAdminLeaves,'admin-balance':renderAdminBalance,
     'admin-sup':renderAdminSup,'admin-emp':renderAdminEmp,'admin-dept':renderAdminDept,
-    'admin-calendar':renderAdminCalendar,'admin-biglog':renderAdminBigLog,'sup-leavelog':renderSupLeaveLog};
+    'admin-calendar':renderAdminCalendar,'admin-biglog':renderAdminBigLog,
+    'admin-sysuser':renderAdminSysUser,
+    'sup-leavelog':renderSupLeaveLog
+  };
   if(map[id])map[id]();
 }
 
@@ -671,6 +770,330 @@ function pgAdminUpload(){return`<div class="page" id="page-admin-upload">
   </div>
 </div>`}
 
+/* ══ ADMIN SYSTEM DASHBOARD PAGE ══ */
+function pgAdmDashboard(){return`<div class="page" id="page-adm-dashboard">
+  <div class="page-hdr">
+    <div><div class="page-title">Dashboard Sistem</div><div class="page-sub" id="adm-dash-sub"></div></div>
+    <div id="adm-cal-indicator"></div>
+  </div>
+  <div class="adm-grid" id="adm-stats"></div>
+  <div class="chart-grid-3" id="adm-chart-row1"></div>
+  <div class="chart-grid" id="adm-chart-row2"></div>
+  <div class="chart-grid" id="adm-chart-row3"></div>
+</div>`}
+
+/* ══ ADMIN SYS USER MANAGEMENT PAGE ══ */
+function pgAdminSysUser(){return`<div class="page" id="page-admin-sysuser">
+  <div class="page-hdr">
+    <div><div class="page-title">Manajemen User Sistem</div><div class="page-sub">Kelola akun admin dan staff administrasi</div></div>
+    <button class="btn btn-primary btn-sm" onclick="openAddSysUser()">+ Tambah User</button>
+  </div>
+  <div class="alert a-info" style="margin-bottom:14px">ℹ️ User di sini adalah <strong>admin</strong> atau <strong>staff</strong> yang hanya bisa akses sistem ESS — bukan karyawan dan tidak punya saldo cuti.</div>
+  <div id="sysuser-list"></div>
+</div>`}
+
+/* ══ RENDER ADMIN SYSTEM DASHBOARD ══ */
+let _admCharts={};
+function destroyChart(id){if(_admCharts[id]){_admCharts[id].destroy();delete _admCharts[id]}}
+
+function renderAdmDashboard(){
+  const now=new Date();
+  document.getElementById('adm-dash-sub').textContent=now.toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  const emps=G('ess5_emps',[]);
+  const leaves=G('ess5_leaves',[]);
+  const sysUsers=G('ess5_sysusers',[]);
+
+  // Calendar status banner
+  const calS=getCalStatus();
+  const ci=document.getElementById('adm-cal-indicator');
+  if(ci){
+    const nextY=now.getFullYear()+1;
+    const cal=G('ess5_calendar',{});
+    if((now.getMonth()>=10)&&!cal[nextY])
+      ci.innerHTML=`<div class="cal-status cal-warn" onclick="showPage('admin-calendar')">⚠ Kalender ${nextY} belum diinput</div>`;
+    else ci.innerHTML=`<div class="cal-status cal-ok">${calS.txt}</div>`;
+  }
+
+  // — Stat Cards —
+  const totalEmp=emps.length;
+  const totalPending=leaves.filter(l=>l.status==='pending').length;
+  const totalY3Risk=emps.filter(e=>(e.annY3||0)>0).length;
+  const totalBigRisk=(()=>{
+    const n=new Date();
+    return emps.filter(e=>{
+      if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0)return false;
+      for(let c=1;c<=20;c++){
+        const ad=bigAccrualDate(e.permanentDate,c);if(ad>n)break;
+        const exp=bigExpiryDate(ad);
+        const diff=(exp-n)/(86400000*30);
+        if(diff>=0&&diff<=2)return true;
+      }
+      return false;
+    }).length;
+  })();
+
+  document.getElementById('adm-stats').innerHTML=`
+    <div class="adm-stat s-blue">
+      <div class="adm-stat-ico">👥</div>
+      <div class="adm-stat-val c-blue">${totalEmp}</div>
+      <div class="adm-stat-lbl">Total Karyawan</div>
+      <div class="adm-stat-sub">${emps.filter(e=>e.status==='tetap').length} tetap · ${emps.filter(e=>e.status==='kontrak').length} kontrak</div>
+    </div>
+    <div class="adm-stat s-yellow">
+      <div class="adm-stat-ico">⏳</div>
+      <div class="adm-stat-val c-yellow">${totalPending}</div>
+      <div class="adm-stat-lbl">Pengajuan Pending</div>
+      <div class="adm-stat-sub">${leaves.filter(l=>l.status==='approved').length} disetujui bulan ini</div>
+    </div>
+    <div class="adm-stat s-red">
+      <div class="adm-stat-ico">⚠️</div>
+      <div class="adm-stat-val c-red">${totalY3Risk}</div>
+      <div class="adm-stat-lbl">Karyawan Saldo Y3</div>
+      <div class="adm-stat-sub">Saldo hangus akhir tahun</div>
+    </div>
+    <div class="adm-stat s-green">
+      <div class="adm-stat-ico">🔔</div>
+      <div class="adm-stat-val c-orange">${totalBigRisk}</div>
+      <div class="adm-stat-lbl">Cuti Besar Akan Hangus</div>
+      <div class="adm-stat-sub">Dalam 2 bulan ke depan</div>
+    </div>`;
+
+  // — Chart Row 1: Leave per Month (bar) + Status Distribution (donut) —
+  const curYear=now.getFullYear();
+  const monthLabels=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const monthData=Array(12).fill(0);
+  const monthDataApproved=Array(12).fill(0);
+  leaves.forEach(l=>{
+    const d=new Date(l.appliedAt);
+    if(d.getFullYear()===curYear){
+      monthData[d.getMonth()]++;
+      if(l.status==='approved')monthDataApproved[d.getMonth()]++;
+    }
+  });
+  const statusCounts={pending:0,approved:0,rejected:0,cancelled:0};
+  leaves.forEach(l=>{if(statusCounts[l.status]!==undefined)statusCounts[l.status]++});
+
+  document.getElementById('adm-chart-row1').innerHTML=`
+    <div class="chart-card">
+      <div class="chart-title">Pengajuan Cuti per Bulan</div>
+      <div class="chart-sub">Tahun ${curYear} — total vs disetujui</div>
+      <div class="chart-wrap" style="height:220px"><canvas id="chart-monthly"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Status Pengajuan</div>
+      <div class="chart-sub">Distribusi semua pengajuan</div>
+      <div class="chart-wrap" style="height:220px;display:flex;align-items:center;justify-content:center"><canvas id="chart-status" style="max-height:200px"></canvas></div>
+    </div>`;
+
+  // — Chart Row 2: Dept Headcount + Dept Leave Balance —
+  const depts=G('ess5_depts',[]);
+  const deptHeadcount=depts.map(d=>emps.filter(e=>e.dept===d).length);
+  const deptAvgAnn=depts.map(d=>{
+    const de=emps.filter(e=>e.dept===d);
+    if(!de.length)return 0;
+    return Math.round(de.reduce((s,e)=>s+totalAnn(e),0)/de.length*10)/10;
+  });
+  const deptY3=depts.map(d=>emps.filter(e=>e.dept===d&&(e.annY3||0)>0).length);
+
+  document.getElementById('adm-chart-row2').innerHTML=`
+    <div class="chart-card">
+      <div class="chart-title">Headcount per Departemen</div>
+      <div class="chart-sub">Jumlah karyawan aktif</div>
+      <div class="chart-wrap" style="height:200px"><canvas id="chart-headcount"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Rata-rata Saldo Cuti Tahunan per Dept</div>
+      <div class="chart-sub">Rata-rata total ann (Y1+Y2+Y3) per departemen</div>
+      <div class="chart-wrap" style="height:200px"><canvas id="chart-dept-ann"></canvas></div>
+    </div>`;
+
+  // — Chart Row 3: Y3 Risk List + Big Leave Risk List —
+  const y3Emp=emps.filter(e=>(e.annY3||0)>0).sort((a,b)=>(b.annY3||0)-(a.annY3||0)).slice(0,6);
+  const bigRiskEmp=(()=>{
+    const n=new Date();
+    return emps.filter(e=>{
+      if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0)return false;
+      for(let c=1;c<=20;c++){
+        const ad=bigAccrualDate(e.permanentDate,c);if(ad>n)break;
+        const exp=bigExpiryDate(ad);
+        const diff=(exp-n)/(86400000*30);
+        if(diff>=0&&diff<=3)return true;
+      }
+      return false;
+    }).slice(0,6);
+  })();
+
+  document.getElementById('adm-chart-row3').innerHTML=`
+    <div class="chart-card">
+      <div class="chart-title">⚠️ Saldo Y3 — Akan Hangus Akhir Tahun</div>
+      <div class="chart-sub">${y3Emp.length} karyawan dengan saldo Y3 aktif</div>
+      <div class="alert-list">${y3Emp.length?y3Emp.map(e=>`
+        <div class="alert-row al-red">
+          <div><div class="alert-name">${e.name}</div><div class="alert-dept">${e.dept} · NIK ${e.nik}</div></div>
+          <span class="badge b-rejected"><b>${e.annY3}</b> hr Y3</span>
+        </div>`).join(''):`<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">✅ Tidak ada saldo Y3 berisiko</div>`}</div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🔔 Cuti Besar — Akan Hangus ≤3 Bulan</div>
+      <div class="chart-sub">${bigRiskEmp.length} karyawan perlu segera ajukan cuti besar</div>
+      <div class="alert-list">${bigRiskEmp.length?bigRiskEmp.map(e=>`
+        <div class="alert-row al-yellow">
+          <div><div class="alert-name">${e.name}</div><div class="alert-dept">${e.dept} · NIK ${e.nik}</div></div>
+          <span class="badge b-pending"><b>${e.bigLeave}</b> hr</span>
+        </div>`).join(''):`<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">✅ Tidak ada cuti besar berisiko</div>`}</div>
+    </div>`;
+
+  // Render charts after DOM update
+  requestAnimationFrame(()=>{
+    const isDark=document.documentElement.getAttribute('data-theme')==='dark';
+    const gridColor=isDark?'rgba(255,255,255,.06)':'rgba(0,0,0,.06)';
+    const textColor=isDark?'#9090a8':'#5a6070';
+    Chart.defaults.color=textColor;Chart.defaults.font.family='DM Sans';Chart.defaults.font.size=11;
+
+    // Monthly bar chart
+    destroyChart('monthly');
+    const mc=document.getElementById('chart-monthly');
+    if(mc)_admCharts['monthly']=new Chart(mc,{type:'bar',data:{labels:monthLabels,datasets:[
+      {label:'Total Pengajuan',data:monthData,backgroundColor:'rgba(45,91,227,.55)',borderRadius:4,borderSkipped:false},
+      {label:'Disetujui',data:monthDataApproved,backgroundColor:'rgba(34,197,94,.55)',borderRadius:4,borderSkipped:false}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,padding:12}}},scales:{x:{grid:{color:gridColor}},y:{grid:{color:gridColor},ticks:{stepSize:1,precision:0}}}}});
+
+    // Status donut
+    destroyChart('status');
+    const sc=document.getElementById('chart-status');
+    if(sc)_admCharts['status']=new Chart(sc,{type:'doughnut',data:{
+      labels:['Pending','Disetujui','Ditolak','Dibatalkan'],
+      datasets:[{data:[statusCounts.pending,statusCounts.approved,statusCounts.rejected,statusCounts.cancelled],
+        backgroundColor:['#f59e0b','#22c55e','#ef4444','#6b7280'],borderWidth:0,hoverOffset:6}]
+    },options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{boxWidth:10,padding:10}}}}});
+
+    // Headcount horizontal bar
+    destroyChart('headcount');
+    const hc=document.getElementById('chart-headcount');
+    if(hc)_admCharts['headcount']=new Chart(hc,{type:'bar',data:{
+      labels:depts,datasets:[{label:'Karyawan',data:deptHeadcount,backgroundColor:'rgba(45,91,227,.6)',borderRadius:4,borderSkipped:false}]
+    },options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{color:gridColor},ticks:{stepSize:1,precision:0}},y:{grid:{color:gridColor}}}}});
+
+    // Dept avg annual leave bar
+    destroyChart('dept-ann');
+    const da=document.getElementById('chart-dept-ann');
+    if(da)_admCharts['dept-ann']=new Chart(da,{type:'bar',data:{
+      labels:depts,datasets:[
+        {label:'Rata-rata Saldo Ann',data:deptAvgAnn,backgroundColor:'rgba(59,130,246,.6)',borderRadius:4,borderSkipped:false},
+        {label:'Punya Y3',data:deptY3,backgroundColor:'rgba(239,68,68,.5)',borderRadius:4,borderSkipped:false,type:'bar'}
+      ]
+    },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{boxWidth:10,padding:10}}},scales:{x:{grid:{color:gridColor}},y:{grid:{color:gridColor}}}}});
+  });
+}
+
+/* ══ RENDER SYS USER MANAGEMENT ══ */
+function renderAdminSysUser(){
+  const sys=G('ess5_sysusers',[]);
+  const el=document.getElementById('sysuser-list');
+  if(!sys.length){el.innerHTML=`<div class="empty"><div class="empty-ico">👤</div><div>Belum ada user sistem</div></div>`;return}
+  el.innerHTML=`<div class="tw-wrap"><div class="tw-scroll"><table>
+    <thead><tr><th>ID</th><th>Nama</th><th>Username</th><th>Role</th><th>Dibuat</th><th>Aksi</th></tr></thead>
+    <tbody>${sys.map(u=>`<tr>
+      <td style="font-size:12px;color:var(--text2)">${u.nik}</td>
+      <td><strong>${u.name||u.username}</strong></td>
+      <td style="font-family:monospace;font-size:12px">${u.username}</td>
+      <td><span class="badge ${u.role==='admin'?'user-role-admin':'user-role-staff'}">${u.role==='admin'?'👑 Admin':'🛡 Staff'}</span></td>
+      <td style="font-size:12px;color:var(--text2)">${fmtDate(u.createdAt)}</td>
+      <td><div style="display:flex;gap:5px">
+        <button class="btn btn-ghost btn-xs" onclick="openEditSysUser('${u.nik}')">Edit</button>
+        <button class="btn btn-yellow btn-xs" onclick="resetSysUserPass('${u.nik}')">Reset Pass</button>
+        ${u.nik===CU.nik?'':'<button class="btn btn-red btn-xs" onclick="delSysUser(\''+u.nik+'\')">Hapus</button>'}
+      </div></td>
+    </tr>`).join('')}</tbody></table></div></div>`;
+}
+
+function genSysNik(){return 'SYS'+String(Date.now()).slice(-4)+String(Math.floor(Math.random()*90+10))}
+
+function openAddSysUser(){
+  openMo(`<div class="modal-title">Tambah User Sistem</div>
+    <div class="modal-sub">Admin atau Staff administrasi — tidak berafiliasi dengan departemen manapun</div>
+    <div class="field"><label>Nama Lengkap</label><input type="text" id="su-name" placeholder="contoh: Rina Marlina"></div>
+    <div class="field"><label>Username</label><input type="text" id="su-user" placeholder="contoh: rina.hr"></div>
+    <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Min 5 karakter" value="12345"></div>
+    <div class="field"><label>Role</label>
+      <select id="su-role">
+        <option value="staff">🛡 Staff — Akses manajemen data (tidak bisa kelola user)</option>
+        <option value="admin">👑 Admin — Akses penuh termasuk manajemen user</option>
+      </select>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="saveAddSysUser()">Simpan</button>
+      <button class="btn btn-ghost" onclick="closeMo()">Batal</button>
+    </div>`);
+}
+
+function saveAddSysUser(){
+  const name=document.getElementById('su-name').value.trim();
+  const username=document.getElementById('su-user').value.trim().toLowerCase();
+  const password=document.getElementById('su-pass').value;
+  const role=document.getElementById('su-role').value;
+  if(!name)return toast('Nama wajib diisi');
+  if(!username)return toast('Username wajib diisi');
+  if(password.length<5)return toast('Password min 5 karakter');
+  const sys=G('ess5_sysusers',[]);
+  if(sys.find(u=>u.username===username))return toast('Username sudah digunakan');
+  const allEmpUsers=G('ess5_users',[]);
+  if(allEmpUsers.find(u=>u.username===username))return toast('Username sudah digunakan oleh karyawan');
+  const nik=genSysNik();
+  sys.push({nik,username,password,role,name,createdAt:new Date().toISOString()});
+  S('ess5_sysusers',sys);
+  closeMo();toast(`✓ User ${name} ditambahkan sebagai ${role}`);renderAdminSysUser();
+}
+
+function openEditSysUser(nik){
+  const sys=G('ess5_sysusers',[]);const u=sys.find(x=>x.nik===nik);if(!u)return;
+  openMo(`<div class="modal-title">Edit User Sistem</div>
+    <div class="modal-sub">${u.name||u.username}</div>
+    <div class="field"><label>Nama Lengkap</label><input type="text" id="eu-name" value="${u.name||''}"></div>
+    <div class="field"><label>Username</label><input type="text" id="eu-user" value="${u.username}"></div>
+    <div class="field"><label>Role</label>
+      <select id="eu-role">
+        <option value="staff" ${u.role==='staff'?'selected':''}>🛡 Staff</option>
+        <option value="admin" ${u.role==='admin'?'selected':''}>👑 Admin</option>
+      </select>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="saveEditSysUser('${nik}')">Simpan</button>
+      <button class="btn btn-ghost" onclick="closeMo()">Batal</button>
+    </div>`);
+}
+
+function saveEditSysUser(nik){
+  const name=document.getElementById('eu-name').value.trim();
+  const username=document.getElementById('eu-user').value.trim().toLowerCase();
+  const role=document.getElementById('eu-role').value;
+  if(!name||!username)return toast('Nama dan username wajib diisi');
+  const sys=G('ess5_sysusers',[]);const i=sys.findIndex(x=>x.nik===nik);if(i<0)return;
+  // Check username conflict (exclude self)
+  if(sys.find((u,idx)=>u.username===username&&idx!==i))return toast('Username sudah digunakan');
+  sys[i].name=name;sys[i].username=username;sys[i].role=role;
+  S('ess5_sysusers',sys);
+  // If editing self, update CU
+  if(CU.nik===nik){CU.name=name;CU.username=username;CU.role=role;
+    document.getElementById('sb-name').textContent=name;
+    document.getElementById('sb-role').textContent=(role==='admin'?'Administrator':'Staff Admin')+' · Sistem';}
+  closeMo();toast('✓ User diupdate');renderAdminSysUser();
+}
+
+function resetSysUserPass(nik){
+  if(!confirm('Reset password user ini ke 12345?'))return;
+  const sys=G('ess5_sysusers',[]);const i=sys.findIndex(x=>x.nik===nik);if(i<0)return;
+  sys[i].password='12345';S('ess5_sysusers',sys);toast('✓ Password direset ke 12345');
+}
+
+function delSysUser(nik){
+  if(nik===CU.nik)return toast('Tidak bisa hapus akun sendiri');
+  if(!confirm('Hapus user sistem ini?'))return;
+  S('ess5_sysusers',G('ess5_sysusers',[]).filter(u=>u.nik!==nik));
+  toast('User dihapus');renderAdminSysUser();
+}
+
 /* ══ RENDER DASHBOARD ══ */
 function renderDash(){
   const now=new Date();
@@ -679,11 +1102,6 @@ function renderDash(){
   if(now.getMonth()===11&&(CE.annY3||0)>0)
     dec.innerHTML=`<div class="dec-warn">⚠️ <strong>${CE.annY3} hari</strong> saldo cuti tahunan Y3 Anda akan <strong>hangus 31 Desember ${now.getFullYear()}</strong>. Segera ajukan cuti!</div>`;
   const cb=document.getElementById('cal-banner');cb.innerHTML='';
-  if(CE.role==='admin'&&(now.getMonth()===10||now.getMonth()===11)){
-    const nextY=now.getFullYear()+1;
-    if(!G('ess5_calendar',{})[nextY])
-      cb.innerHTML=`<div class="dec-warn" style="border-color:rgba(59,130,246,.3);background:rgba(59,130,246,.08);color:var(--blue)">📅 <strong>Kalender kerja ${nextY} belum diinput.</strong> Segera upload setelah perundingan serikat selesai. <button class="btn btn-xs btn-ghost" style="margin-left:8px" onclick="showPage('admin-calendar')">Upload Sekarang</button></div>`;
-  }
   document.getElementById('dash-stats').innerHTML=`
     <div class="stat-card"><div class="stat-label">Total Cuti Tahunan</div><div class="stat-val c-blue">${totalAnn(CE)}<span class="stat-unit">hr</span></div>
       <div style="font-size:11px;color:var(--text2);margin-top:5px">Y1:${CE.annY1||0} Y2:${CE.annY2||0} <span class="c-red">Y3:${CE.annY3||0}</span></div></div>
@@ -1044,6 +1462,7 @@ function renderAdminEmp(){
         <td style="font-size:12px;color:var(--text2)">${fmtDate(e.permanentDate)}</td>
         <td style="display:flex;gap:4px">
           <button class="btn btn-ghost btn-xs" onclick="openEditEmp('${e.nik}')">Edit</button>
+          <button class="btn btn-yellow btn-xs" onclick="resetEmpPass('${e.nik}','${e.name.replace(/'/g,"\\'")}')">Reset Pass</button>
           <button class="btn btn-red btn-xs" onclick="delEmp('${e.nik}')">Hapus</button>
         </td>
       </tr>`;
@@ -1214,12 +1633,20 @@ function delDept(name){const cnt=G('ess5_emps',[]).filter(e=>e.dept===name).leng
 /* ══ ACTIONS ══ */
 function doChangePass(){
   const old=document.getElementById('cp-old').value,nw=document.getElementById('cp-new').value,conf=document.getElementById('cp-conf').value;
-  const msg=document.getElementById('cp-msg');const users=G('ess5_users',[]);const idx=users.findIndex(u=>u.nik===CE.nik);
-  if(idx<0)return;
-  if(users[idx].password!==old){msg.innerHTML=`<div class="alert a-err">Password lama salah.</div>`;return}
+  const msg=document.getElementById('cp-msg');
   if(nw.length<5){msg.innerHTML=`<div class="alert a-err">Password baru min 5 karakter.</div>`;return}
   if(nw!==conf){msg.innerHTML=`<div class="alert a-err">Konfirmasi tidak cocok.</div>`;return}
-  users[idx].password=nw;S('ess5_users',users);
+  if(isSysUser()){
+    // System user (admin/staff)
+    const sys=G('ess5_sysusers',[]);const i=sys.findIndex(u=>u.nik===CU.nik);if(i<0)return;
+    if(sys[i].password!==old){msg.innerHTML=`<div class="alert a-err">Password lama salah.</div>`;return}
+    sys[i].password=nw;S('ess5_sysusers',sys);CU.password=nw;
+  } else {
+    // Employee
+    const users=G('ess5_users',[]);const idx=users.findIndex(u=>u.nik===CE.nik);if(idx<0)return;
+    if(users[idx].password!==old){msg.innerHTML=`<div class="alert a-err">Password lama salah.</div>`;return}
+    users[idx].password=nw;S('ess5_users',users);
+  }
   msg.innerHTML=`<div class="alert a-ok">✓ Password berhasil diubah!</div>`;
   document.getElementById('cp-old').value='';document.getElementById('cp-new').value='';document.getElementById('cp-conf').value='';
 }
@@ -1380,7 +1807,7 @@ function doBulkUpdate(){
     if(elig.getFullYear()===year){const ml=12-elig.getMonth();add=Math.round((ml/12)*days)}
     if(add>0) emps[i].annY1=(emps[i].annY1||0)+add;
   });
-  S('ess5_emps',emps);CE=emps.find(e=>e.nik===CE.nik)||CE;
+  S('ess5_emps',emps);if(!isSysUser()&&CE)CE=emps.find(e=>e.nik===CE.nik)||CE;
   toast(`✓ Saldo cuti tahunan (Y1) ditambahkan untuk tahun ${year}`);
 }
 
@@ -1404,7 +1831,7 @@ function saveEditBal(nik){
   const y3=parseInt(document.getElementById('eb-y3').value)||0,big=parseInt(document.getElementById('eb-big').value)||0;
   const emps=G('ess5_emps',[]);const i=emps.findIndex(e=>e.nik===nik);
   emps[i].annY1=y1;emps[i].annY2=y2;emps[i].annY3=y3;emps[i].bigLeave=big;
-  S('ess5_emps',emps);if(emps[i].nik===CE.nik)CE=emps[i];closeMo();toast('Saldo diupdate ✓');renderAdminBalance();
+  S('ess5_emps',emps);if(!isSysUser()&&CE&&emps[i].nik===CE.nik)CE=emps[i];closeMo();toast('Saldo diupdate ✓');renderAdminBalance();
 }
 
 function openAddEmp(){
@@ -1480,12 +1907,19 @@ function saveEditEmp(nik){
   emps[i]={...emps[i],name,dept,status,annY1:y1,annY2:y2,annY3:y3,bigLeave:big,joinDate:join,permanentDate:status==='tetap'?(perm||join):null};
   S('ess5_emps',emps);
   if(pass){const users=G('ess5_users',[]);const ui=users.findIndex(u=>u.nik===nik);if(ui>=0){users[ui].password=pass;S('ess5_users',users)}}
-  if(emps[i].nik===CE.nik)CE=emps[i];closeMo();toast('Data diupdate ✓');renderAdminEmp();
+  if(!isSysUser()&&CE&&emps[i].nik===CE.nik)CE=emps[i];closeMo();toast('Data diupdate ✓');renderAdminEmp();
 }
 function delEmp(nik){
   if(!confirm('Hapus karyawan ini?'))return;
   S('ess5_emps',G('ess5_emps',[]).filter(e=>e.nik!==nik));S('ess5_users',G('ess5_users',[]).filter(u=>u.nik!==nik));
   toast('Karyawan dihapus');renderAdminEmp();
+}
+function resetEmpPass(nik,name){
+  if(!confirm(`Reset password ${name} ke default 12345?`))return;
+  const users=G('ess5_users',[]);const i=users.findIndex(u=>u.nik===nik);
+  if(i<0)return toast('User tidak ditemukan');
+  users[i].password='12345';S('ess5_users',users);
+  toast(`✓ Password ${name} direset ke 12345`);
 }
 
 /* ══ EXPORT & TEMPLATE ══ */
