@@ -1,0 +1,12 @@
+{
+  "name": "ess-ohgishi",
+  "version": "6.0.0",
+  "description": "Employee Self-Service — OHGISHI",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}
