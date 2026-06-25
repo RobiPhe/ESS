@@ -9,11 +9,15 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // Buat client langsung di sini — bypass _db.js untuk isolasi masalah
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
+    // Trim URL untuk menghindari trailing slash atau spasi
+    const supabaseUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+    const supabaseKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'ENV vars tidak lengkap', url: !!supabaseUrl, key: !!supabaseKey });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const body = req.body || {};
     const { username, password } = body;
@@ -21,7 +25,7 @@ module.exports = async function handler(req, res) {
     if (!username || !password)
       return res.status(400).json({ error: 'Username dan password wajib diisi' });
 
-    // Cek system_users — gunakan limit(1) bukan .single() atau .maybeSingle()
+    // Cek system_users
     const { data: sysUsers, error: sysErr } = await supabase
       .from('system_users')
       .select('nik, username, role, name')
@@ -30,7 +34,11 @@ module.exports = async function handler(req, res) {
       .limit(1);
 
     if (sysErr) {
-      return res.status(500).json({ error: 'DB error sysuser: ' + sysErr.message });
+      return res.status(500).json({ 
+        error: 'DB error sysuser: ' + sysErr.message,
+        hint: sysErr.hint || '',
+        url_used: supabaseUrl
+      });
     }
 
     if (sysUsers && sysUsers.length > 0) {
@@ -71,7 +79,6 @@ module.exports = async function handler(req, res) {
 
     const employee = employees[0];
 
-    // Cek supervisor
     const { data: supData } = await supabase
       .from('supervisors')
       .select('nik, dept, level, position')
