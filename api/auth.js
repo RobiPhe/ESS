@@ -1,62 +1,77 @@
-// api/auth.js — Login endpoint
-// POST /api/auth  { username, password }
-const supabase = require('./_db');
+// api/auth.js
+const { createClient } = require('@supabase/supabase-js');
 
 module.exports = async function handler(req, res) {
-  // Handle CORS preflight
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-
-  if (req.method !== 'POST')
-    return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
+    // Buat client langsung di sini — bypass _db.js untuk isolasi masalah
+    const supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+
     const body = req.body || {};
     const { username, password } = body;
 
     if (!username || !password)
       return res.status(400).json({ error: 'Username dan password wajib diisi' });
 
-    // 1. Cek system_users (admin/staff)
-    const { data: sysUser, error: sysErr } = await supabase
+    // Cek system_users — gunakan limit(1) bukan .single() atau .maybeSingle()
+    const { data: sysUsers, error: sysErr } = await supabase
       .from('system_users')
       .select('nik, username, role, name')
       .eq('username', username)
       .eq('password', password)
-      .maybeSingle(); // maybeSingle = tidak throw error jika tidak ada
+      .limit(1);
 
-    if (sysUser) {
+    if (sysErr) {
+      return res.status(500).json({ error: 'DB error sysuser: ' + sysErr.message });
+    }
+
+    if (sysUsers && sysUsers.length > 0) {
       return res.status(200).json({
         type: 'sysuser',
-        user: sysUser,
+        user: sysUsers[0],
         employee: null
       });
     }
 
-    // 2. Cek emp_users (karyawan)
-    const { data: empUser, error: empErr } = await supabase
+    // Cek emp_users
+    const { data: empUsers, error: empErr } = await supabase
       .from('emp_users')
       .select('nik, username')
       .eq('username', username)
       .eq('password', password)
-      .maybeSingle();
+      .limit(1);
 
-    if (!empUser)
+    if (empErr) {
+      return res.status(500).json({ error: 'DB error empuser: ' + empErr.message });
+    }
+
+    if (!empUsers || empUsers.length === 0)
       return res.status(401).json({ error: 'Username atau password salah' });
 
-    // Ambil data karyawan lengkap
-    const { data: employee, error: eErr } = await supabase
+    const empUser = empUsers[0];
+
+    // Ambil data karyawan
+    const { data: employees, error: eErr } = await supabase
       .from('employees')
       .select('*')
       .eq('nik', empUser.nik)
-      .maybeSingle();
+      .limit(1);
 
-    if (!employee)
+    if (eErr) return res.status(500).json({ error: 'DB error employee: ' + eErr.message });
+    if (!employees || employees.length === 0)
       return res.status(401).json({ error: 'Data karyawan tidak ditemukan' });
 
-    // Cek apakah supervisor
+    const employee = employees[0];
+
+    // Cek supervisor
     const { data: supData } = await supabase
       .from('supervisors')
       .select('nik, dept, level, position')

@@ -1,9 +1,11 @@
-// api/_db.js — Supabase client shared
+// api/_db.js — Supabase client factory
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
 
-module.exports = supabase;
+module.exports = getSupabase;

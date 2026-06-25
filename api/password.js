@@ -1,5 +1,6 @@
 // api/password.js
-const supabase = require('./_db');
+const getSupabase = require('./_db');
+const supabase = getSupabase();
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
