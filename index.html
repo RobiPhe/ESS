@@ -442,7 +442,7 @@ function normalizeEmp(e) {
     permanentDate: e.permanent_date,
     annY1: e.ann_y1 || 0, annY2: e.ann_y2 || 0, annY3: e.ann_y3 || 0,
     bigLeave: e.big_leave || 0, role: 'employee',
-    username: e.username // tersedia dari join view jika ada
+    username: e.username || e.emp_users?.username || ''
   };
 }
 function normalizeSup(s) {
@@ -1733,7 +1733,7 @@ function getFilteredEmps(){
 }
 
 function renderAdminEmp(){
-  const filtered=getFilteredEmps();const users=G('ess5_users',[]);
+  const filtered=getFilteredEmps();
   const depts=[...new Set(G('ess5_emps',[]).map(e=>e.dept))];
   const selectedNiks=G('ess5_sel_emps',[]);
   const allSel=filtered.length>0&&filtered.every(e=>selectedNiks.includes(e.nik));
@@ -1745,16 +1745,15 @@ function renderAdminEmp(){
     <thead>
       <tr>
         <th class="chk-col"><input type="checkbox" ${allSel?'checked':''} onchange="toggleSelectAll(this)"></th>
-        <th>NIK</th><th>Nama</th><th>Dept</th><th>Status</th><th>Username</th>
+        <th>NIK</th><th>Nama / Username</th><th>Dept</th><th>Status</th>
         <th>Y1</th><th>Y2</th><th>Y3</th><th>Besar</th><th>Tgl Gabung</th><th>Tgl Tetap</th><th>Aksi</th>
       </tr>
       <tr class="filter-row">
         <th class="chk-col"></th>
         <th><input placeholder="NIK..." oninput="setEF('nik',this.value)" data-fkey="f_nik" value="${empFilters.nik||''}"></th>
-        <th><input placeholder="Nama..." oninput="setEF('name',this.value)" data-fkey="f_name" value="${empFilters.name||''}"></th>
+        <th><input placeholder="Nama / Username..." oninput="setEF('name',this.value)" data-fkey="f_name" value="${empFilters.name||''}"></th>
         <th><select onchange="setEF('dept',this.value)"><option value="">Semua</option>${depts.map(d=>`<option ${empFilters.dept===d?'selected':''}>${d}</option>`).join('')}</select></th>
         <th><select onchange="setEF('status',this.value)"><option value="">Semua</option><option value="kontrak" ${empFilters.status==='kontrak'?'selected':''}>Kontrak</option><option value="tetap" ${empFilters.status==='tetap'?'selected':''}>Tetap</option></select></th>
-        <th><input placeholder="Username..." oninput="setEF('username',this.value)" data-fkey="f_username" value="${empFilters.username||''}"></th>
         <th>${opw('annY1')}</th><th>${opw('annY2')}</th><th>${opw('annY3')}</th><th>${opw('bigLeave')}</th>
         <th><div style="display:flex;flex-direction:column;gap:3px">
           <input type="date" style="font-size:10px;padding:3px 4px;width:100%" onchange="setEF('joinFrom',this.value)" value="${empFilters.joinFrom||''}">
@@ -1768,12 +1767,18 @@ function renderAdminEmp(){
       </tr>
     </thead>
     <tbody>${filtered.map(e=>{
-      const u=users.find(x=>x.nik===e.nik)||{username:'-'};const sel=selectedNiks.includes(e.nik);
+      const sel=selectedNiks.includes(e.nik);
+      // Username: ambil dari e.username (dinormalisasi dari DB), atau generate dari nama sebagai fallback
+      const uname=e.username||autoUser(e.name,[]);
       return `<tr>
         <td class="chk-col"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelect('${e.nik}',this)"></td>
-        <td>${e.nik}</td><td>${e.name}</td><td>${e.dept}</td>
-        <td style="text-transform:capitalize">${e.status}</td>
-        <td class="c-blue">${u.username}</td>
+        <td style="font-size:12px;color:var(--text2)">${e.nik}</td>
+        <td>
+          <div style="font-weight:500">${e.name}</div>
+          <div style="font-size:11px;color:var(--accent2);font-family:monospace;margin-top:2px">@${uname}</div>
+        </td>
+        <td>${e.dept}</td>
+        <td><span class="badge ${e.status==='tetap'?'b-approved':'b-pending'}" style="font-size:10px">${e.status}</span></td>
         <td class="saldo-y1">${e.annY1||0}</td><td class="saldo-y2">${e.annY2||0}</td>
         <td class="saldo-y3">${e.annY3||0}</td><td class="saldo-big">${e.bigLeave||0}</td>
         <td style="font-size:12px;color:var(--text2)">${fmtDate(e.joinDate)}</td>
