@@ -10,9 +10,18 @@ module.exports = async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const { data, error } = await supabase.from('employees').select('*').order('name');
+      // Join dengan emp_users untuk dapat username sekaligus
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*, emp_users(username)')
+        .order('name');
       if (error) throw error;
-      return res.status(200).json(data);
+      // Flatten username dari join
+      const result = (data || []).map(e => ({
+        ...e,
+        username: e.emp_users?.username || ''
+      }));
+      return res.status(200).json(result);
     }
 
     if (req.method === 'POST') {
