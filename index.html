@@ -378,49 +378,59 @@ async function api(method, path, body) {
 // ── Load semua data ke in-memory store setelah login ──
 async function loadAllData() {
   try {
-    const [emps, depts, sups, leaves, notifs, biglog, sysusers, empUsers] = await Promise.all([
+    // Load semua data paralel dari Supabase
+    const [emps, depts, sups, leaves, biglog, sysusers] = await Promise.all([
       api('GET', 'employees'),
       api('GET', 'departments'),
       api('GET', 'supervisors'),
       api('GET', 'leaves?all=1'),
-      CE ? api('GET', `notifications?nik=${CU.nik}`) : Promise.resolve([]),
       api('GET', 'biglog?all=1'),
       api('GET', 'sysusers'),
-      isSysUser() ? Promise.resolve([]) : api('GET', `employees`), // emp users fetched separately if needed
     ]);
 
-    // Normalize format agar kompatibel dengan kode lama (camelCase)
+    // Normalize dan simpan ke in-memory store
     S('ess5_emps', (emps || []).map(normalizeEmp));
     S('ess5_depts', depts || []);
     S('ess5_sups', (sups || []).map(normalizeSup));
     S('ess5_leaves', (leaves || []).map(normalizeLeave));
-    S('ess5_notifs', (notifs || []).map(normalizeNotif));
     S('ess5_biglog', (biglog || []).map(normalizeBiglog));
     S('ess5_sysusers', sysusers || []);
-    S('ess5_calendar', {}); // calendar dimuat on-demand
     S('ess5_yearshift', new Date().getFullYear());
     S('ess5_sel_emps', []);
+    S('ess5_users', []);
 
-    // Load kalender tahun berjalan
+    // Load notifikasi untuk user yang login
+    if(CU && CU.nik) {
+      try {
+        const notifs = await api('GET', `notifications?nik=${CU.nik}`);
+        S('ess5_notifs', (notifs || []).map(normalizeNotif));
+      } catch(e) { S('ess5_notifs', []); }
+    } else {
+      S('ess5_notifs', []);
+    }
+
+    // Load kalender tahun berjalan + tahun depan
     const year = new Date().getFullYear();
-    const cal = await api('GET', `calendar?year=${year}`);
     const calStore = {};
-    // Format: { 'YYYY': [{date:'YYYY-MM-DD', description:'...'}] }
-    calStore[String(year)] = Object.entries(cal || {}).map(([date, description]) => ({ date, description }));
-    // Load tahun berikutnya juga
+    try {
+      const cal = await api('GET', `calendar?year=${year}`);
+      calStore[String(year)] = Object.entries(cal || {}).map(([date, description]) => ({ date, description }));
+    } catch(e) { calStore[String(year)] = []; }
     try {
       const calNext = await api('GET', `calendar?year=${year + 1}`);
       calStore[String(year + 1)] = Object.entries(calNext || {}).map(([date, description]) => ({ date, description }));
-    } catch (_) {}
+    } catch(e) { calStore[String(year + 1)] = []; }
     S('ess5_calendar', calStore);
 
-    // emp_users — hanya butuh untuk cek username di UI (sudah ada di employees)
-    S('ess5_users', []);
-
-    console.log('✓ Data loaded from Supabase');
+    console.log('✓ Data loaded:', {
+      emps: G('ess5_emps',[]).length,
+      depts: G('ess5_depts',[]).length,
+      leaves: G('ess5_leaves',[]).length,
+      sups: G('ess5_sups',[]).length
+    });
   } catch (e) {
     toast('⚠ Gagal memuat data: ' + e.message);
-    console.error(e);
+    console.error('loadAllData error:', e);
   }
 }
 
@@ -2461,35 +2471,111 @@ function parseCSVLine(line){
   for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++}else inQ=!inQ}else if(c===','&&!inQ){result.push(cur);cur=''}else cur+=c}
   result.push(cur);return result;
 }
+
 async function processCSV(){
-  const raw=document.getElementById('csv-manual').value.trim();if(!raw)return toast('Masukkan data CSV');
-  const emps=G('ess5_emps',[]),depts=G('ess5_depts',[]);
-  let added=0,skipped=0;
+  const raw=document.getElementById('csv-manual').value.trim();
+  if(!raw)return toast('Masukkan data CSV');
+
+  const emps=G('ess5_emps',[]);
+  const depts=G('ess5_depts',[]);
   const toInsert=[];
+  const newDepts=[];
+  let skipped=0;
+
+  // Kumpulkan semua username yang sudah ada (DB + yang akan diinsert)
+  // Ini fix masalah duplicate username
+  const usedUsernames=new Set(emps.map(e=>{
+    // Ambil username dari emp_users jika ada, atau generate dari nama
+    return (e.username||autoUser(e.name,[]));
+  }));
+
   raw.split('\n').filter(Boolean).forEach(line=>{
     const p=parseCSVLine(line);
     if(p.length<4||!p[1]||!p[2])return;
     const nik=p[1].trim(),name=p[2].trim(),dept=p[3].trim();
     const status=(p[4]||'kontrak').trim().toLowerCase();
     const y3=parseInt(p[5])||0,y2=parseInt(p[6])||0,y1=parseInt(p[7])||0,big=parseInt(p[8])||0;
-    const joinDate=(p[9]||'').trim()||null,permanentDate=(p[10]||'').trim()||null;
+    const joinDate=(p[9]||'').trim()||null;
+    const permanentDate=(p[10]||'').trim()||null;
+
     if(!nik||!name){skipped++;return}
     if(emps.find(e=>e.nik===nik)){skipped++;return}
-    const used=emps.map(e=>e.name.toLowerCase().replace(/\s+/g,'.'));
-    const username=autoUser(name,used);
-    toInsert.push({nik,name,dept,status,join_date:joinDate,permanent_date:status==='tetap'?permanentDate:null,
-      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,username,password:'12345'});
-    emps.push({nik,name,dept,role:'employee',annY1:y1,annY2:y2,annY3:y3,bigLeave:big,status,joinDate,permanentDate:status==='tetap'?permanentDate:null});
-    if(dept&&!depts.includes(dept)){depts.push(dept);}
-    added++;
+
+    // Generate username unik — cek dari usedUsernames Set
+    let username=autoUser(name,[...usedUsernames]);
+    // Pastikan benar-benar unik dengan tambah suffix jika perlu
+    let attempt=username;let counter=2;
+    while(usedUsernames.has(attempt)){attempt=username+counter;counter++;}
+    username=attempt;
+    usedUsernames.add(username); // Tandai sudah dipakai
+
+    toInsert.push({
+      nik,name,dept,status,
+      join_date:joinDate,
+      permanent_date:status==='tetap'?(permanentDate||joinDate):null,
+      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,
+      username,password:'12345'
+    });
+
+    // Track departemen baru
+    if(dept&&!depts.includes(dept)&&!newDepts.includes(dept)){
+      newDepts.push(dept);
+    }
   });
+
   if(!toInsert.length)return toast(`Tidak ada data baru (${skipped} dilewati)`);
-  try {
-    await Promise.all(toInsert.map(emp=>api('POST','employees',emp)));
-    S('ess5_emps',emps);S('ess5_depts',depts);
-    toast(`✓ ${added} karyawan ditambahkan${skipped?' ('+skipped+' dilewati)':''}`);
-    document.getElementById('csv-manual').value='';
-  } catch(e){toast('Gagal upload: '+e.message);}
+
+  // Tampilkan progress
+  toast(`Mengupload ${toInsert.length} karyawan...`);
+
+  let added=0, failed=0, failedNames=[];
+
+  // Upload satu per satu agar bisa skip yang gagal tanpa batalkan semua
+  for(const emp of toInsert){
+    try {
+      await api('POST','employees',emp);
+      emps.push({
+        nik:emp.nik,name:emp.name,dept:emp.dept,role:'employee',
+        annY1:emp.ann_y1,annY2:emp.ann_y2,annY3:emp.ann_y3,
+        bigLeave:emp.big_leave,status:emp.status,
+        joinDate:emp.join_date,
+        permanentDate:emp.permanent_date,
+        username:emp.username
+      });
+      added++;
+    } catch(e){
+      failed++;
+      failedNames.push(emp.name+' ('+e.message+')');
+    }
+  }
+
+  // Simpan ke in-memory
+  S('ess5_emps',emps);
+
+  // Simpan departemen baru ke DB + in-memory
+  if(newDepts.length>0){
+    for(const dept of newDepts){
+      try {
+        await api('POST','departments',{name:dept});
+        depts.push(dept);
+      } catch(e){
+        // Dept mungkin sudah ada — tidak masalah
+        if(!depts.includes(dept))depts.push(dept);
+      }
+    }
+    S('ess5_depts',depts);
+  }
+
+  document.getElementById('csv-manual').value='';
+
+  if(failed===0){
+    toast(`✓ ${added} karyawan berhasil ditambahkan${skipped?' ('+skipped+' dilewati)':''}${newDepts.length?' + '+newDepts.length+' dept baru':''}`);
+  } else {
+    toast(`✓ ${added} berhasil, ${failed} gagal: ${failedNames.slice(0,2).join(', ')}${failed>2?'...':''}`);
+    console.error('Failed uploads:',failedNames);
+  }
+
+  renderAdminEmp();
 }
 function handleUpload(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{document.getElementById('csv-manual').value=e.target.result;toast('File dimuat. Klik Proses Data.')};r.readAsText(f)}
 
