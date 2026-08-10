@@ -344,176 +344,116 @@ const LOGO='data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTE
 document.getElementById('login-img').src=LOGO;
 
 /* ══════════════════════════════════════════════
-   ESS v6 — API CLIENT LAYER
-   Semua data dari Supabase via Vercel API Routes
-   In-memory cache: tidak ada localStorage
+   ESS v6 — API CLIENT LAYER (Supabase via Vercel)
    ══════════════════════════════════════════════ */
-
-// In-memory store — menggantikan localStorage
 const _store = {};
-
-// G / S tetap synchronous (agar tidak perlu rewrite semua logic)
-// Data di-load ke _store saat login, lalu setiap write langsung ke API + update _store
 const G = (k, d) => { const v = _store[k]; return v == null ? d : v; };
 const S = (k, v) => { _store[k] = v; };
 
-// ── API helpers ─────────────────────────────────
+// ── API helper ──────────────────────────────────────────
 async function api(method, path, body) {
   try {
-    const opts = {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-    };
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch('/api/' + path, opts);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'API error');
     return data;
-  } catch (e) {
-    console.error('API error:', path, e.message);
-    throw e;
-  }
+  } catch (e) { console.error('API error:', path, e.message); throw e; }
 }
 
-// ── Load semua data ke in-memory store setelah login ──
-async function loadAllData() {
-  try {
-    // Load semua data paralel dari Supabase
-    const [emps, depts, sups, leaves, biglog, sysusers] = await Promise.all([
-      api('GET', 'employees'),
-      api('GET', 'departments'),
-      api('GET', 'supervisors'),
-      api('GET', 'leaves?all=1'),
-      api('GET', 'biglog?all=1'),
-      api('GET', 'sysusers'),
-    ]);
-
-    // Normalize dan simpan ke in-memory store
-    S('ess5_emps', (emps || []).map(normalizeEmp));
-    S('ess5_depts', depts || []);
-    S('ess5_sups', (sups || []).map(normalizeSup));
-    S('ess5_leaves', (leaves || []).map(normalizeLeave));
-    S('ess5_biglog', (biglog || []).map(normalizeBiglog));
-    S('ess5_sysusers', sysusers || []);
-    S('ess5_yearshift', new Date().getFullYear());
-    S('ess5_sel_emps', []);
-    S('ess5_users', []);
-
-    // Load notifikasi untuk user yang login
-    if(CU && CU.nik) {
-      try {
-        const notifs = await api('GET', `notifications?nik=${CU.nik}`);
-        S('ess5_notifs', (notifs || []).map(normalizeNotif));
-      } catch(e) { S('ess5_notifs', []); }
-    } else {
-      S('ess5_notifs', []);
-    }
-
-    // Load kalender tahun berjalan + tahun depan
-    const year = new Date().getFullYear();
-    const calStore = {};
-    try {
-      const cal = await api('GET', `calendar?year=${year}`);
-      calStore[String(year)] = Object.entries(cal || {}).map(([date, description]) => ({ date, description }));
-    } catch(e) { calStore[String(year)] = []; }
-    try {
-      const calNext = await api('GET', `calendar?year=${year + 1}`);
-      calStore[String(year + 1)] = Object.entries(calNext || {}).map(([date, description]) => ({ date, description }));
-    } catch(e) { calStore[String(year + 1)] = []; }
-    S('ess5_calendar', calStore);
-
-    console.log('✓ Data loaded:', {
-      emps: G('ess5_emps',[]).length,
-      depts: G('ess5_depts',[]).length,
-      leaves: G('ess5_leaves',[]).length,
-      sups: G('ess5_sups',[]).length
-    });
-  } catch (e) {
-    toast('⚠ Gagal memuat data: ' + e.message);
-    console.error('loadAllData error:', e);
-  }
-}
-
-// ── Normalizers: snake_case (DB) → camelCase (frontend) ──
+// ── Normalizers: snake_case (DB) → camelCase ──────────
 function normalizeEmp(e) {
   return {
-    nik: e.nik, name: e.name, dept: e.dept,
-    status: e.status, joinDate: e.join_date,
-    permanentDate: e.permanent_date,
-    annY1: e.ann_y1 || 0, annY2: e.ann_y2 || 0, annY3: e.ann_y3 || 0,
-    bigLeave: e.big_leave || 0, role: 'employee',
+    nik: e.nik, name: e.name, dept: e.dept, status: e.status,
+    joinDate: e.join_date, permanentDate: e.permanent_date,
+    annY1: e.ann_y1||0, annY2: e.ann_y2||0, annY3: e.ann_y3||0,
+    bigLeave: e.big_leave||0, role: 'employee',
     username: e.username || e.emp_users?.username || ''
   };
 }
 function normalizeSup(s) {
-  return {
-    id: s.id, nik: s.nik, dept: s.dept,
-    level: s.level, position: s.position, name: s.name
-  };
+  return { id: s.id, nik: s.nik, dept: s.dept, level: s.level, position: s.position, name: s.name };
 }
 function normalizeLeave(l) {
   return {
     id: l.id, empNik: l.emp_nik, leaveType: l.leave_type,
-    dates: l.dates || [], reason: l.reason,
-    status: l.status,
+    dates: l.dates||[], reason: l.reason, status: l.status,
     approver1Nik: l.approver1_nik, approver1Name: l.approver1_name, approver1Pos: l.approver1_pos,
     approved1At: l.approved1_at, rejected1At: l.rejected1_at, reject1Reason: l.reject1_reason,
     approver2Nik: l.approver2_nik, approver2Name: l.approver2_name, approver2Pos: l.approver2_pos,
     approved2At: l.approved2_at, rejected2At: l.rejected2_at, reject2Reason: l.reject2_reason,
     appliedAt: l.applied_at, cancelledAt: l.cancelled_at, cancelReason: l.cancel_reason,
+    processedAt: l.approved2_at || l.approved1_at || l.rejected2_at || l.rejected1_at || null,
+    days: (l.dates||[]).length,
+    note: l.reject1_reason || l.reject2_reason || '',
   };
 }
 function normalizeNotif(n) {
-  return {
-    id: n.id, targetNik: n.target_nik, title: n.title,
-    body: n.body, leaveId: n.leave_id, read: n.is_read,
-    createdAt: n.created_at
-  };
+  return { id: n.id, targetNik: n.target_nik, title: n.title, body: n.body,
+           leaveId: n.leave_id, read: n.is_read, at: n.created_at };
 }
 function normalizeBiglog(b) {
-  return {
-    id: b.id, empNik: b.emp_nik, type: b.type,
-    amount: b.amount, note: b.note, date: b.log_date || b.created_at
-  };
+  return { id: b.id, empNik: b.emp_nik, type: b.type, amount: b.amount, note: b.note,
+           date: b.log_date || b.created_at };
 }
 
-// ── API Write Helpers (dipanggil setelah S() untuk sync ke DB) ──
+// ── Load semua data dari Supabase ke _store ─────────────
+async function loadAllData() {
+  try {
+    const [emps, depts, sups, leaves, biglog, sysusers] = await Promise.all([
+      api('GET','employees'), api('GET','departments'), api('GET','supervisors'),
+      api('GET','leaves?all=1'), api('GET','biglog?all=1'), api('GET','sysusers'),
+    ]);
+    S('ess5_emps',(emps||[]).map(normalizeEmp));
+    S('ess5_depts',depts||[]);
+    S('ess5_sups',(sups||[]).map(normalizeSup));
+    S('ess5_leaves',(leaves||[]).map(normalizeLeave));
+    S('ess5_biglog',(biglog||[]).map(normalizeBiglog));
+    S('ess5_sysusers',sysusers||[]);
+    S('ess5_yearshift',new Date().getFullYear());
+    S('ess5_sel_emps',[]);
+    S('ess5_users',[]);
+    // Notifikasi per user
+    if(CU&&CU.nik){
+      try{ const notifs=await api('GET',`notifications?nik=${CU.nik}`);
+           S('ess5_notifs',(notifs||[]).map(normalizeNotif)); }catch(_){S('ess5_notifs',[]);}
+    } else { S('ess5_notifs',[]); }
+    // Kalender
+    const yr=new Date().getFullYear(); const calStore={};
+    try{ const cal=await api('GET',`calendar?year=${yr}`);
+         calStore[String(yr)]=Object.entries(cal||{}).map(([date,description])=>({date,description})); }catch(_){calStore[String(yr)]=[]}
+    try{ const cal2=await api('GET',`calendar?year=${yr+1}`);
+         calStore[String(yr+1)]=Object.entries(cal2||{}).map(([date,description])=>({date,description})); }catch(_){calStore[String(yr+1)]=[]}
+    S('ess5_calendar',calStore);
+    console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:G('ess5_leaves',[]).length});
+  } catch(e){ toast('⚠ Gagal memuat data: '+e.message); console.error(e); }
+}
 
-// Employees
+// ── API Write Helpers ───────────────────────────────────
 async function apiUpdateEmp(nik, fields) {
-  // Convert camelCase → snake_case
-  const dbFields = {};
-  if (fields.annY1 !== undefined) dbFields.ann_y1 = fields.annY1;
-  if (fields.annY2 !== undefined) dbFields.ann_y2 = fields.annY2;
-  if (fields.annY3 !== undefined) dbFields.ann_y3 = fields.annY3;
-  if (fields.bigLeave !== undefined) dbFields.big_leave = fields.bigLeave;
-  if (fields.name !== undefined) dbFields.name = fields.name;
-  if (fields.dept !== undefined) dbFields.dept = fields.dept;
-  if (fields.status !== undefined) dbFields.status = fields.status;
-  if (fields.joinDate !== undefined) dbFields.join_date = fields.joinDate;
-  if (fields.permanentDate !== undefined) dbFields.permanent_date = fields.permanentDate;
-  if (Object.keys(dbFields).length === 0) return;
-  try {
-    await api('PUT', 'employees', { nik, ...dbFields });
-  } catch (e) { console.error('apiUpdateEmp', e); }
+  const db={};
+  if(fields.annY1!==undefined) db.ann_y1=fields.annY1;
+  if(fields.annY2!==undefined) db.ann_y2=fields.annY2;
+  if(fields.annY3!==undefined) db.ann_y3=fields.annY3;
+  if(fields.bigLeave!==undefined) db.big_leave=fields.bigLeave;
+  if(fields.name!==undefined) db.name=fields.name;
+  if(fields.dept!==undefined) db.dept=fields.dept;
+  if(fields.status!==undefined) db.status=fields.status;
+  if(fields.joinDate!==undefined) db.join_date=fields.joinDate;
+  if(fields.permanentDate!==undefined) db.permanent_date=fields.permanentDate;
+  if(!Object.keys(db).length) return;
+  try{ await api('PUT','employees',{nik,...db}); }catch(e){console.error('apiUpdateEmp',e);}
+}
+async function apiPushNotif(targetNik,title,body,leaveId){
+  try{ await api('POST','notifications',{target_nik:targetNik,title,body,leave_id:leaveId}); }
+  catch(e){console.warn('notif push failed',e);}
 }
 
-// Leaves
-async function apiUpdateLeave(id, updateData) {
-  try {
-    await api('PUT', 'leaves', { id, ...updateData });
-  } catch (e) { console.error('apiUpdateLeave', e); }
-}
-
-// Notifications
-async function apiPushNotif(targetNik, title, body, leaveId) {
-  try {
-    await api('POST', 'notifications', { target_nik: targetNik, title, body, leave_id: leaveId });
-  } catch (e) { console.error('apiPushNotif', e); }
-}
-
-// ── Override pushNotif agar juga call API ──
-const _origPushNotif = pushNotif; // akan di-override setelah definisi aslinya
+// Track flags per session (tidak perlu persist)
+const _sessionFlags={};
+function sfGet(k){return _sessionFlags[k]||false}
+function sfSet(k){_sessionFlags[k]=true}
 
 /* CALENDAR */
 const DEF_HOL={'2025':['2025-01-01','2025-03-28','2025-03-29','2025-03-30','2025-03-31','2025-04-01','2025-04-18','2025-05-01','2025-05-12','2025-05-29','2025-06-01','2025-08-17','2025-12-25','2025-12-26'],'2026':['2026-01-01','2026-03-03','2026-03-20','2026-03-21','2026-04-02','2026-04-03','2026-05-01','2026-05-14','2026-05-25','2026-06-01','2026-08-17','2026-12-25']};
@@ -571,11 +511,6 @@ function bigWarningDate(exp){
   return new Date(exp.getFullYear(), exp.getMonth()-1, 1);
 }
 
-// Track accrual/expiry checks per session (in-memory, tidak perlu persist)
-const _sessionFlags={};
-function sfGet(k){return _sessionFlags[k]||false}
-function sfSet(k){_sessionFlags[k]=true}
-
 function checkBigLeaveAccrual(){
   const now=new Date();const emps=G('ess5_emps',[]);let changed=false;
   emps.forEach((e,i)=>{
@@ -583,11 +518,9 @@ function checkBigLeaveAccrual(){
     for(let c=1;c<=20;c++){
       const ad=bigAccrualDate(e.permanentDate,c);if(ad>now)break;
       const key=`bac_${e.nik}_c${c}`;if(sfGet(key))continue;
-      // Cek apakah sudah pernah log di biglog (dari DB)
       const alreadyLogged=G('ess5_biglog',[]).some(l=>l.empNik===e.nik&&l.type==='accrual'&&l.note&&l.note.includes(`siklus ke-${c}`));
       if(alreadyLogged){sfSet(key);continue;}
       emps[i].bigLeave=(emps[i].bigLeave||0)+6;
-      G('ess5_biglog',[]).unshift({empNik:e.nik,type:'accrual',date:ad.toISOString(),amount:6,note:`Akrual cuti besar siklus ke-${c}`});
       api('PUT','balance',{nik:e.nik,big_leave:emps[i].bigLeave}).catch(()=>{});
       api('POST','biglog',{emp_nik:e.nik,type:'accrual',amount:6,note:`Akrual cuti besar siklus ke-${c}`,log_date:ad.toISOString().split('T')[0]}).catch(()=>{});
       pushNotif(e.nik,'🎉 Cuti Besar Bertambah',`Saldo cuti besar Anda bertambah 6 hari — siklus ke-${c}.`,null);
@@ -596,7 +529,6 @@ function checkBigLeaveAccrual(){
   });
   if(changed)S('ess5_emps',emps);
 }
-
 function checkBigLeaveExpiry(){
   const now=new Date();const emps=G('ess5_emps',[]);let changed=false;
   emps.forEach((e,i)=>{
@@ -613,14 +545,13 @@ function checkBigLeaveExpiry(){
           api('POST','biglog',{emp_nik:e.nik,type:'expired',amount:expired,note:`${expired} hari saldo cuti besar hangus`}).catch(()=>{});
           sfSet(key);changed=true;
           pushNotif(e.nik,'⚠️ Cuti Besar Hangus',`${expired} hari saldo cuti besar hangus per ${exp.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}.`,null);
-          G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>{pushNotif(u.nik,'Info: Cuti Besar Hangus',`${e.name} (${e.nik}): ${expired} hari cuti besar hangus.`,null)});
+          G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>pushNotif(u.nik,'Info: Cuti Besar Hangus',`${e.name} (${e.nik}): ${expired} hari cuti besar hangus.`,null));
         }
       }
     }
   });
   if(changed)S('ess5_emps',emps);
 }
-
 function checkBigLeaveWarning(){
   const now=new Date();const emps=G('ess5_emps',[]);
   emps.forEach(e=>{
@@ -640,36 +571,34 @@ function checkBigLeaveWarning(){
     }
   });
 }
-
 function checkDecWarnings(){
   const now=new Date();if(now.getMonth()!==11)return;
   const emps=G('ess5_emps',[]);
   emps.forEach(e=>{
-    if((e.annY3||0)>0){const key=`decwarn_${e.nik}_${now.getFullYear()}`;if(!sfGet(key)){pushNotif(e.nik,'⚠️ Saldo Cuti Akan Hangus',`${e.annY3} hari saldo Y3 Anda akan hangus 31 Desember ${now.getFullYear()}. Segera ajukan!`,null);sfSet(key)}}
+    if((e.annY3||0)>0){
+      const key=`decwarn_${e.nik}_${now.getFullYear()}`;
+      if(!sfGet(key)){pushNotif(e.nik,'⚠️ Saldo Cuti Akan Hangus',`${e.annY3} hari saldo Y3 Anda akan hangus 31 Desember ${now.getFullYear()}. Segera ajukan!`,null);sfSet(key);}
+    }
   });
 }
-
 function checkCalReminder(){
   const now=new Date();if(now.getMonth()<10)return;
   const ny=now.getFullYear()+1;
-  const cal=G('ess5_calendar',{});if(cal[String(ny)]!==undefined&&cal[String(ny)].length>0)return;
+  const cal=G('ess5_calendar',{});
+  if(cal[String(ny)]!==undefined&&cal[String(ny)].length>0)return;
   const key=`calrem_${ny}_m${now.getMonth()}`;if(sfGet(key))return;
   G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>{
-    pushNotif(u.nik,'📅 Kalender Kerja Belum Diinput',`Kalender kerja tahun ${ny} belum diinput. Segera upload setelah perundingan serikat pekerja selesai.`,null);
+    pushNotif(u.nik,'📅 Kalender Kerja Belum Diinput',`Kalender kerja tahun ${ny} belum diinput. Segera upload setelah perundingan serikat selesai.`,null);
   });
   sfSet(key);
 }
-
 function yearShift(){
-  // Year shift dijalankan server-side atau via bulk update manual
-  // Di sini hanya update in-memory untuk display
   const now=new Date();const cy=now.getFullYear();const last=G('ess5_yearshift',cy-1);
   if(cy<=last)return;
   S('ess5_yearshift',cy);
 }
-
-/* initData — tidak diperlukan lagi, data dari Supabase */
-function initData(){ /* no-op — data loaded from Supabase via loadAllData() */ }
+/* initData — no-op, data dari Supabase */
+function initData(){ /* data loaded via loadAllData() after login */ }
 
 function autoUser(name,used){
   const parts=name.toLowerCase().replace(/[^a-z\s]/g,'').trim().split(/\s+/);
@@ -687,20 +616,16 @@ async function doLogin(){
   const u=document.getElementById('lu').value.trim(),p=document.getElementById('lp').value;
   const btn=document.querySelector('.btn-primary');
   if(btn){btn.textContent='Memuat...';btn.disabled=true;}
+  document.getElementById('lerr').style.display='none';
   try {
-    const result = await api('POST','auth',{username:u,password:p});
-    CU = result.user;
-    CE = result.employee ? normalizeEmp(result.employee) : null;
-    if(result.type==='sysuser') {
-      // Simpan ke store agar isSysUser() bisa bekerja sebelum loadAllData
-      S('ess5_sysusers',[CU]);
-    }
+    const result=await api('POST','auth',{username:u,password:p});
+    CU=result.user;
+    CE=result.employee?normalizeEmp(result.employee):null;
+    if(result.type==='sysuser') S('ess5_sysusers',[CU]);
     document.getElementById('login-screen').style.display='none';
     document.getElementById('app').style.display='block';
     document.getElementById('sb-img').src=LOGO;
-    // Load semua data dari Supabase
     await loadAllData();
-    // Setelah load, refresh CE dengan data terbaru
     if(CE) CE=G('ess5_emps',[]).find(e=>e.nik===CU.nik)||CE;
     yearShift();
     if(!isSysUser()){checkBigLeaveAccrual();checkBigLeaveExpiry();checkBigLeaveWarning();checkDecWarnings();}
@@ -708,17 +633,21 @@ async function doLogin(){
     buildApp();
     if(window._ar)clearInterval(window._ar);
     window._ar=setInterval(async()=>{
-      if(!isSysUser()&&CE){
-        CE=G('ess5_emps',[]).find(e=>e.nik===CU.nik)||CE;
-        checkBigLeaveAccrual();checkBigLeaveExpiry();checkBigLeaveWarning();
-      }
-      const active=document.querySelector('.page.active');
-      if(active)refreshPage(active.id.replace('page-',''));
-      refreshBadge();
+      try{
+        await loadAllData();
+        if(!isSysUser()&&CE){
+          CE=G('ess5_emps',[]).find(e=>e.nik===CU.nik)||CE;
+          checkBigLeaveAccrual();checkBigLeaveExpiry();checkBigLeaveWarning();
+        }
+        const active=document.querySelector('.page.active');
+        if(active)refreshPage(active.id.replace('page-',''));
+        refreshBadge();
+      }catch(e){console.warn('Auto-refresh error:',e.message);}
     },60000);
-  } catch(e) {
-    document.getElementById('lerr').textContent = e.message || 'Username atau password salah';
-    document.getElementById('lerr').style.display='block';
+  } catch(e){
+    const el=document.getElementById('lerr');
+    el.textContent=e.message||'Username atau password salah';
+    el.style.display='block';
   } finally {
     if(btn){btn.textContent='Masuk';btn.disabled=false;}
   }
@@ -726,7 +655,6 @@ async function doLogin(){
 function doLogout(){
   if(window._ar)clearInterval(window._ar);
   CU=null;CE=null;
-  // Clear in-memory store
   for(const k in _store) delete _store[k];
   document.getElementById('login-screen').style.display='flex';
   document.getElementById('app').style.display='none';
@@ -734,7 +662,7 @@ function doLogout(){
   document.getElementById('lerr').style.display='none';
 }
 
-/* THEME — tema tetap pakai localStorage (aman, bukan data bisnis) */
+/* THEME */
 function toggleTheme(){
   const h=document.documentElement,dark=h.getAttribute('data-theme')==='dark';
   h.setAttribute('data-theme',dark?'light':'dark');
@@ -746,16 +674,15 @@ function toggleTheme(){
 /* NOTIFICATIONS — push ke API + update in-memory */
 function pushNotif(targetNik,title,body,leaveId){
   const notifs=G('ess5_notifs',[]);
-  const newNotif={id:'n_'+Date.now()+'_'+Math.random().toString(36).slice(2),targetNik,title,body,leaveId,read:false,at:new Date().toISOString()};
-  notifs.unshift(newNotif);
+  notifs.unshift({id:'n_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+    targetNik,title,body:body||'',leaveId,read:false,at:new Date().toISOString()});
   S('ess5_notifs',notifs);
-  if(CE&&CE.nik===targetNik)refreshBadge();
-  // Async write ke API (fire-and-forget, UI tidak menunggu)
+  if(CU&&CU.nik===targetNik)refreshBadge();
   apiPushNotif(targetNik,title,body||'',leaveId).catch(e=>console.warn('notif push failed',e));
 }
 function refreshBadge(){
-  if(!CE&&!isSysUser())return;
-  if(!isSysUser()){
+  if(!CU)return;
+  if(!isSysUser()&&CE){
     const isSup=G('ess5_sups',[]).some(s=>s.nik===CE.nik);
     if(isSup){document.getElementById('bell').style.display='flex'}
     const unread=G('ess5_notifs',[]).filter(n=>n.targetNik===CE.nik&&!n.read).length;
@@ -767,7 +694,7 @@ function refreshBadge(){
 }
 function toggleNotif(){const p=document.getElementById('notif-popup');p.classList.toggle('show');if(p.classList.contains('show'))renderNotifList()}
 function renderNotifList(){
-  const notifs=G('ess5_notifs',[]).filter(n=>n.targetNik===CE.nik);
+  const notifs=G('ess5_notifs',[]).filter(n=>n.targetNik===(CE?CE.nik:CU.nik));
   const el=document.getElementById('notif-list');
   if(!notifs.length){el.innerHTML='<div class="notif-empty">Tidak ada notifikasi</div>';return}
   el.innerHTML=notifs.map(n=>`<div class="notif-item ${n.read?'':'unread'}" onclick="readNotif('${n.id}')">
@@ -778,9 +705,8 @@ function renderNotifList(){
 }
 function readNotif(id){
   const n=G('ess5_notifs',[]);const i=n.findIndex(x=>x.id===id);
-  if(i>=0){n[i].read=true;S('ess5_notifs',n)}
+  if(i>=0){n[i].read=true;S('ess5_notifs',n);}
   refreshBadge();renderNotifList();
-  // Sync ke DB (id dari DB adalah numeric, dari in-memory bisa string)
   api('PUT','notifications',{id}).catch(()=>{});
 }
 function clearNotifs(){
@@ -1337,13 +1263,13 @@ async function saveAddSysUser(){
   if(!name)return toast('Nama wajib diisi');
   if(!username)return toast('Username wajib diisi');
   if(password.length<5)return toast('Password min 5 karakter');
-  try {
+  try{
     const result=await api('POST','sysusers',{name,username,password,role});
     const sys=G('ess5_sysusers',[]);
     sys.push({nik:result.nik,name,username,role,createdAt:new Date().toISOString()});
     S('ess5_sysusers',sys);
     closeMo();toast(`✓ User ${name} ditambahkan sebagai ${role}`);renderAdminSysUser();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 function openEditSysUser(nik){
@@ -1369,7 +1295,7 @@ async function saveEditSysUser(nik){
   const username=document.getElementById('eu-user').value.trim().toLowerCase();
   const role=document.getElementById('eu-role').value;
   if(!name||!username)return toast('Nama dan username wajib diisi');
-  try {
+  try{
     await api('PUT','sysusers',{nik,name,username,role});
     const sys=G('ess5_sysusers',[]);const i=sys.findIndex(x=>x.nik===nik);
     if(i>=0){sys[i].name=name;sys[i].username=username;sys[i].role=role;S('ess5_sysusers',sys);}
@@ -1377,25 +1303,25 @@ async function saveEditSysUser(nik){
       document.getElementById('sb-name').textContent=name;
       document.getElementById('sb-role').textContent=(role==='admin'?'Administrator':'Staff Admin')+' · Sistem';}
     closeMo();toast('✓ User diupdate');renderAdminSysUser();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 async function resetSysUserPass(nik){
   if(!confirm('Reset password user ini ke 12345?'))return;
-  try {
+  try{
     await api('POST','password',{action:'reset',nik,type:'sysuser'});
     toast('✓ Password direset ke 12345');
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 async function delSysUser(nik){
   if(nik===CU.nik)return toast('Tidak bisa hapus akun sendiri');
   if(!confirm('Hapus user sistem ini?'))return;
-  try {
+  try{
     await api('DELETE',`sysusers?nik=${nik}`);
     S('ess5_sysusers',G('ess5_sysusers',[]).filter(u=>u.nik!==nik));
     toast('User dihapus');renderAdminSysUser();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 /* ══ RENDER DASHBOARD ══ */
@@ -1433,40 +1359,70 @@ function lcHTML(l,showActions){
   const slMap={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
   const cat=leaveCategory(l);const wdays=countWorkdays(l.dates||[]);
   const canCancel=showActions&&(l.status==='pending'||l.status==='approved');
+  const atasanName=l.approver1Name||l.supervisorName||'-';
+  // Kumpulkan catatan approval dari DB fields
+  const approvalNotes=[];
+  if(l.reject1Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver1Name||'L1',note:l.reject1Reason});
+  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:'Disetujui'});
+  if(l.reject2Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver2Name||'L2',note:l.reject2Reason});
+  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:'Disetujui'});
+  const noteText=l.note||'';
   return `<div class="lc">
     <div class="lc-hdr">
       <div>
         <div class="lc-title">${l.leaveType} — ${wdays} hari kerja <span style="color:var(--text2);font-size:12px">(${(l.dates||[]).length} kalender)</span></div>
-        <div class="lc-meta"><span>📅 ${formatDates(l.dates)}</span><span>Atasan: ${l.supervisorName}</span></div>
+        <div class="lc-meta"><span>📅 ${formatDates(l.dates)}</span><span>Atasan: ${atasanName}</span></div>
       </div>
       <span class="badge ${sbMap[l.status]||'b-pending'}">${slMap[l.status]||l.status}</span>
     </div>
-    <div class="lc-reason">${l.reason}</div>
+    <div class="lc-reason">${l.reason||''}</div>
     ${apStepsHTML(l)}
     <div class="lc-foot">
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <span class="badge ${cat.cls}">${cat.lbl}</span>
-        <span class="badge b-neutral">Ajuan: ${fmtDate(l.appliedAt)}</span>
+        <span class="badge b-neutral">Tanggal Pengajuan: ${fmtDate(l.appliedAt)}</span>
         ${l.processedAt?`<span class="badge b-neutral">Diproses: ${fmtDate(l.processedAt)}</span>`:''}
       </div>
       ${canCancel?`<button class="btn btn-sm btn-orange" onclick="openCancelLeave('${l.id}')">Batalkan</button>`:''}
     </div>
-    ${l.note?`<div style="margin-top:7px;font-size:12px;padding:6px 12px;background:var(--bg3);border-radius:8px;color:var(--text2)">Catatan: ${l.note}</div>`:''}
+    ${approvalNotes.map(n=>`<div style="margin-top:6px;font-size:12px;padding:6px 12px;background:var(--bg3);border-radius:8px;display:flex;gap:8px;align-items:flex-start">
+      <span class="${n.cls}" style="font-weight:600;flex-shrink:0">${n.ico} ${n.who}:</span>
+      <span style="color:var(--text2)">${n.note}</span>
+    </div>`).join('')}
+    ${noteText&&!approvalNotes.length?`<div style="margin-top:6px;font-size:12px;padding:6px 12px;background:var(--bg3);border-radius:8px;color:var(--text2)">📝 ${noteText}</div>`:''}
     ${l.cancelReason?`<div style="margin-top:5px;font-size:12px;padding:6px 12px;background:var(--orange-bg);border-radius:8px;color:var(--orange)">Alasan Batal: ${l.cancelReason}</div>`:''}
   </div>`;
 }
 
 function apStepsHTML(l){
-  const sups=G('ess5_sups',[]);const emp=G('ess5_emps',[]).find(e=>e.nik===l.empNik)||{dept:''};
-  const ds=sups.filter(s=>s.dept===emp.dept).sort((a,b)=>a.level-b.level);
-  if(!ds.length) return '';
+  const steps=[];
+  if(l.approver1Nik||l.approver1Name)
+    steps.push({nik:l.approver1Nik,name:l.approver1Name||'L1',level:1});
+  if(l.approver2Nik||l.approver2Name)
+    steps.push({nik:l.approver2Nik,name:l.approver2Name||'L2',level:2});
+  // Fallback dari sups jika field approver tidak ada
+  if(!steps.length){
+    const sups=G('ess5_sups',[]);const emp=G('ess5_emps',[]).find(e=>e.nik===l.empNik)||{dept:''};
+    sups.filter(s=>s.dept===emp.dept).sort((a,b)=>a.level-b.level)
+        .forEach(s=>steps.push({nik:s.nik,name:s.name,level:s.level}));
+  }
+  if(!steps.length)return '';
   let h='<div class="ap-steps">';
-  ds.forEach((s,i)=>{
-    if(i>0) h+='<span class="ap-arrow">→</span>';
-    let cls='s-wait',lbl=`L${s.level}: ${s.name}`;
-    if(l.status==='rejected'&&l.processedBy===s.nik) cls='s-rej',lbl+=' ✗';
-    else if(l.approvals&&l.approvals.includes(s.nik)) cls='s-done',lbl+=' ✓';
-    else if(l.status==='pending'&&(i===0||(l.approvals&&l.approvals.includes(ds[i-1].nik)))) cls='s-pending';
+  steps.forEach((s,i)=>{
+    if(i>0)h+='<span class="ap-arrow">→</span>';
+    let cls='s-wait',lbl=s.name;
+    if(s.level===1){
+      if(l.rejected1At){cls='s-rej';lbl+=' ✗';}
+      else if(l.approved1At){cls='s-done';lbl+=' ✓';}
+      else if(l.status==='pending')cls='s-pending';
+    } else if(s.level===2){
+      if(l.rejected2At){cls='s-rej';lbl+=' ✗';}
+      else if(l.approved2At){cls='s-done';lbl+=' ✓';}
+      else if(l.status==='approved1'||l.approved1At)cls='s-pending';
+    }
+    // Fallback in-memory
+    if(cls==='s-wait'&&l.approvals&&l.approvals.includes(s.nik)){cls='s-done';lbl+=' ✓';}
+    if(cls==='s-wait'&&l.status==='rejected'&&l.processedBy===s.nik){cls='s-rej';lbl+=' ✗';}
     h+=`<span class="ap-step ${cls}">${lbl}</span>`;
   });
   return h+'</div>';
@@ -1620,6 +1576,30 @@ function openAddSupLevel(dept){
     </div>`);
 }
 
+function openAddSup(){
+  const emps=G('ess5_emps',[]);const depts=G('ess5_depts',[]);
+  openMo(`<div class="modal-title">Tambah Atasan</div>
+    <div class="g2i">
+      <div class="field"><label>Departemen</label>
+        <select id="as-dept">${depts.map(d=>`<option value="${d}">${d}</option>`).join('')}</select></div>
+      <div class="field"><label>Level</label>
+        <select id="as-lvl"><option value="1">Level 1 (Langsung)</option><option value="2">Level 2 (Manager)</option></select></div>
+    </div>
+    <div class="field"><label>Karyawan</label>
+      <select id="as-emp"><option value="">-- Pilih Karyawan --</option>
+        ${emps.map(e=>`<option value="${e.nik}">${e.name} (${e.dept})</option>`).join('')}
+      </select></div>
+    <div class="field"><label>Jabatan</label>
+      <select id="as-pos">
+        <option value="leader">Leader</option><option value="foreman">Foreman</option>
+        <option value="asmen">Asisten Manager</option><option value="manager">Manager</option>
+        <option value="GM">General Manager</option><option value="director">Director</option>
+      </select></div>
+    <div class="modal-foot">
+      <button class="btn btn-primary" onclick="saveSupLevel()">Simpan</button>
+      <button class="btn btn-ghost" onclick="closeMo()">Batal</button>
+    </div>`);
+}
 async function saveSupLevel(){
   const dept=document.getElementById('as-dept').value;
   const nik=document.getElementById('as-emp').value;
@@ -1628,12 +1608,12 @@ async function saveSupLevel(){
   const emp=G('ess5_emps',[]).find(e=>e.nik===nik);if(!emp)return;
   const sups=G('ess5_sups',[]);
   if(sups.find(s=>s.nik===nik&&s.dept===dept))return toast('Atasan ini sudah ada di dept tersebut');
-  if(sups.find(s=>s.dept===dept&&s.level===lvl))return toast(`Level ${lvl} untuk dept ${dept} sudah ada. Edit atau hapus yang ada.`);
-  try {
+  if(sups.find(s=>s.dept===dept&&s.level===lvl))return toast(`Level ${lvl} untuk dept ${dept} sudah ada`);
+  try{
     await api('POST','supervisors',{nik,dept,level:lvl,position:pos});
     sups.push({nik,dept,level:lvl,position:pos,name:emp.name});S('ess5_sups',sups);
     closeMo();toast('Atasan ditambahkan ✓');renderAdminSup();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 function openEditSupLevel(nik,dept){
@@ -1650,26 +1630,24 @@ function openEditSupLevel(nik,dept){
     </div>`);
 }
 async function saveEditSupLevel(nik,dept){
-  const pos=document.getElementById('es-pos').value;const lvl=parseInt(document.getElementById('es-lvl').value);
-  const sups=G('ess5_sups',[]);const s=sups.find(x=>x.nik===nik&&x.dept===dept);
-  if(!s)return;
-  try {
+  const pos=document.getElementById('es-pos').value;
+  const lvl=parseInt(document.getElementById('es-lvl').value);
+  const sups=G('ess5_sups',[]);const s=sups.find(x=>x.nik===nik&&x.dept===dept);if(!s)return;
+  try{
     await api('PUT','supervisors',{id:s.id,nik,dept,level:lvl,position:pos});
     const i=sups.findIndex(x=>x.nik===nik&&x.dept===dept);
-    if(i>=0){sups[i].position=pos;sups[i].level=lvl;S('ess5_sups',sups)}
+    if(i>=0){sups[i].position=pos;sups[i].level=lvl;S('ess5_sups',sups);}
     closeMo();toast('Diupdate ✓');renderAdminSup();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 async function removeSupLevel(nik,dept){
   if(!confirm('Hapus atasan ini dari departemen?'))return;
-  const sups=G('ess5_sups',[]);const s=sups.find(x=>x.nik===nik&&x.dept===dept);
-  if(!s)return;
-  try {
+  const sups=G('ess5_sups',[]);const s=sups.find(x=>x.nik===nik&&x.dept===dept);if(!s)return;
+  try{
     await api('DELETE',`supervisors?id=${s.id}`);
     S('ess5_sups',sups.filter(x=>!(x.nik===nik&&x.dept===dept)));
     toast('Dihapus');renderAdminSup();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 /* ══ EMPLOYEE WITH FILTER + QUICK FILTER + CHECKBOX ══ */
@@ -1733,7 +1711,7 @@ function getFilteredEmps(){
 }
 
 function renderAdminEmp(){
-  const filtered=getFilteredEmps();
+  const filtered=getFilteredEmps();const users=G('ess5_users',[]);
   const depts=[...new Set(G('ess5_emps',[]).map(e=>e.dept))];
   const selectedNiks=G('ess5_sel_emps',[]);
   const allSel=filtered.length>0&&filtered.every(e=>selectedNiks.includes(e.nik));
@@ -1745,15 +1723,16 @@ function renderAdminEmp(){
     <thead>
       <tr>
         <th class="chk-col"><input type="checkbox" ${allSel?'checked':''} onchange="toggleSelectAll(this)"></th>
-        <th>NIK</th><th>Nama / Username</th><th>Dept</th><th>Status</th>
+        <th>NIK</th><th>Nama</th><th>Dept</th><th>Status</th><th>Username</th>
         <th>Y1</th><th>Y2</th><th>Y3</th><th>Besar</th><th>Tgl Gabung</th><th>Tgl Tetap</th><th>Aksi</th>
       </tr>
       <tr class="filter-row">
         <th class="chk-col"></th>
         <th><input placeholder="NIK..." oninput="setEF('nik',this.value)" data-fkey="f_nik" value="${empFilters.nik||''}"></th>
-        <th><input placeholder="Nama / Username..." oninput="setEF('name',this.value)" data-fkey="f_name" value="${empFilters.name||''}"></th>
+        <th><input placeholder="Nama..." oninput="setEF('name',this.value)" data-fkey="f_name" value="${empFilters.name||''}"></th>
         <th><select onchange="setEF('dept',this.value)"><option value="">Semua</option>${depts.map(d=>`<option ${empFilters.dept===d?'selected':''}>${d}</option>`).join('')}</select></th>
         <th><select onchange="setEF('status',this.value)"><option value="">Semua</option><option value="kontrak" ${empFilters.status==='kontrak'?'selected':''}>Kontrak</option><option value="tetap" ${empFilters.status==='tetap'?'selected':''}>Tetap</option></select></th>
+        <th><input placeholder="Username..." oninput="setEF('username',this.value)" data-fkey="f_username" value="${empFilters.username||''}"></th>
         <th>${opw('annY1')}</th><th>${opw('annY2')}</th><th>${opw('annY3')}</th><th>${opw('bigLeave')}</th>
         <th><div style="display:flex;flex-direction:column;gap:3px">
           <input type="date" style="font-size:10px;padding:3px 4px;width:100%" onchange="setEF('joinFrom',this.value)" value="${empFilters.joinFrom||''}">
@@ -1767,18 +1746,12 @@ function renderAdminEmp(){
       </tr>
     </thead>
     <tbody>${filtered.map(e=>{
-      const sel=selectedNiks.includes(e.nik);
-      // Username: ambil dari e.username (dinormalisasi dari DB), atau generate dari nama sebagai fallback
-      const uname=e.username||autoUser(e.name,[]);
+      const u=users.find(x=>x.nik===e.nik)||{username:'-'};const sel=selectedNiks.includes(e.nik);
       return `<tr>
         <td class="chk-col"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelect('${e.nik}',this)"></td>
-        <td style="font-size:12px;color:var(--text2)">${e.nik}</td>
-        <td>
-          <div style="font-weight:500">${e.name}</div>
-          <div style="font-size:11px;color:var(--accent2);font-family:monospace;margin-top:2px">@${uname}</div>
-        </td>
-        <td>${e.dept}</td>
-        <td><span class="badge ${e.status==='tetap'?'b-approved':'b-pending'}" style="font-size:10px">${e.status}</span></td>
+        <td>${e.nik}</td><td>${e.name}</td><td>${e.dept}</td>
+        <td style="text-transform:capitalize">${e.status}</td>
+        <td class="c-blue">${u.username}</td>
         <td class="saldo-y1">${e.annY1||0}</td><td class="saldo-y2">${e.annY2||0}</td>
         <td class="saldo-y3">${e.annY3||0}</td><td class="saldo-big">${e.bigLeave||0}</td>
         <td style="font-size:12px;color:var(--text2)">${fmtDate(e.joinDate)}</td>
@@ -1827,12 +1800,12 @@ function toggleSelect(nik,chk){
 async function bulkDelete(){
   const sel=G('ess5_sel_emps',[]);if(!sel.length)return;
   if(!confirm(`Hapus ${sel.length} karyawan terpilih? Semua data cuti ikut terhapus.`))return;
-  try {
+  try{
     await Promise.all(sel.map(nik=>api('DELETE',`employees?nik=${nik}`)));
     S('ess5_emps',G('ess5_emps',[]).filter(e=>!sel.includes(e.nik)));
     S('ess5_leaves',G('ess5_leaves',[]).filter(l=>!sel.includes(l.empNik)));
     S('ess5_sel_emps',[]);toast(`✓ ${sel.length} karyawan dihapus`);renderAdminEmp();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 function clearSelection(){S('ess5_sel_emps',[]);renderAdminEmp()}
 
@@ -1887,52 +1860,53 @@ function openAddHoliday(){
     </div>`);
 }
 async function saveHoliday(year){
-  const date=document.getElementById('hol-date').value;const type=document.getElementById('hol-type').value;const note=document.getElementById('hol-note').value.trim();
+  const date=document.getElementById('hol-date').value;
+  const type=document.getElementById('hol-type').value;
+  const note=document.getElementById('hol-note').value.trim();
   if(!date)return toast('Pilih tanggal');
-  const cal=G('ess5_calendar',{});if(!cal[String(year)]) cal[String(year)]=[];
+  const cal=G('ess5_calendar',{});if(!cal[String(year)])cal[String(year)]=[];
   if(cal[String(year)].find(h=>h.date===date))return toast('Tanggal sudah ada');
-  try {
-    const holidays={};cal[String(year)].forEach(h=>{holidays[h.date]=h.note||h.type||''});
+  try{
+    const holidays={};cal[String(year)].forEach(h=>{holidays[h.date]=h.note||h.type||'';});
     holidays[date]=note||type;
     await api('POST','calendar',{year,holidays});
     cal[String(year)].push({date,type,note});S('ess5_calendar',cal);
     closeMo();toast('Hari libur ditambahkan ✓');renderAdminCalendar();refreshBadge();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 async function deleteHoliday(year,date){
   if(!confirm('Hapus hari libur ini?'))return;
-  const cal=G('ess5_calendar',{});
-  if(!cal[String(year)])return;
-  try {
+  const cal=G('ess5_calendar',{});if(!cal[String(year)])return;
+  try{
     const remaining={};
-    cal[String(year)].filter(h=>h.date!==date).forEach(h=>{remaining[h.date]=h.note||h.type||''});
+    cal[String(year)].filter(h=>h.date!==date).forEach(h=>{remaining[h.date]=h.note||h.type||'';});
     await api('POST','calendar',{year,holidays:remaining});
     cal[String(year)]=cal[String(year)].filter(h=>h.date!==date);
     S('ess5_calendar',cal);toast('Dihapus');renderAdminCalendar();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 async function importHolidayCSV(inp){
   const f=inp.files[0];if(!f)return;
-  const sel=document.getElementById('cal-year-sel');const year=sel?parseInt(sel.value):new Date().getFullYear();
+  const sel=document.getElementById('cal-year-sel');
+  const year=sel?parseInt(sel.value):new Date().getFullYear();
   const r=new FileReader();
   r.onload=async ev=>{
-    const cal=G('ess5_calendar',{});if(!cal[String(year)]) cal[String(year)]=[];
-    const holidays={};cal[String(year)].forEach(h=>{holidays[h.date]=h.note||h.type||''});
+    const cal=G('ess5_calendar',{});if(!cal[String(year)])cal[String(year)]=[];
+    const holidays={};cal[String(year)].forEach(h=>{holidays[h.date]=h.note||h.type||'';});
     let added=0;
     ev.target.result.split('\n').filter(Boolean).forEach(line=>{
       const p=line.split(',').map(s=>s.trim().replace(/"/g,''));
-      if(!p[0]||!p[0].match(/^\d{4}-\d{2}-\d{2}$/)) return;
-      if(holidays[p[0]]) return;
+      if(!p[0]||!p[0].match(/^\d{4}-\d{2}-\d{2}$/))return;
+      if(holidays[p[0]])return;
       holidays[p[0]]=p[2]||p[1]||'';
       cal[String(year)].push({date:p[0],type:p[1]||'Cuti Bersama',note:p[2]||''});
       added++;
     });
-    try {
+    try{
       await api('POST','calendar',{year,holidays});
-      S('ess5_calendar',cal);toast(`✓ ${added} hari libur ditambahkan`);renderAdminCalendar();refreshBadge();
-    } catch(e){toast('Gagal: '+e.message);}
+      S('ess5_calendar',cal);toast(`✓ ${added} hari libur ditambahkan`);
+      renderAdminCalendar();refreshBadge();
+    }catch(e){toast('Gagal: '+e.message);}
   };
   r.readAsText(f);
 }
@@ -1970,29 +1944,48 @@ function renderAdminDept(){
       </td></tr>`).join('')}</tbody></table></div></div>`;
 }
 function openAddDept(){openMo(`<div class="modal-title">Tambah Departemen</div><div class="field"><label>Nama</label><input type="text" id="dn" placeholder="contoh: Marketing"></div><div class="modal-foot"><button class="btn btn-primary" onclick="saveDept()">Simpan</button><button class="btn btn-ghost" onclick="closeMo()">Batal</button></div>`)}
-async function saveDept(){const n=document.getElementById('dn').value.trim();if(!n)return toast('Nama wajib');const d=G('ess5_depts',[]);if(d.includes(n))return toast('Sudah ada');try{await api('POST','departments',{name:n});d.push(n);S('ess5_depts',d);closeMo();toast('✓');renderAdminDept()}catch(e){toast('Gagal: '+e.message)}}
+async function saveDept(){
+  const n=document.getElementById('dn').value.trim();if(!n)return toast('Nama wajib');
+  const d=G('ess5_depts',[]);if(d.includes(n))return toast('Sudah ada');
+  try{
+    await api('POST','departments',{name:n});
+    d.push(n);S('ess5_depts',d);closeMo();toast('✓ Departemen ditambahkan');renderAdminDept();
+  }catch(e){toast('Gagal: '+e.message);}
+}
 function openEditDept(name){openMo(`<div class="modal-title">Edit Departemen</div><div class="field"><label>Nama Baru</label><input type="text" id="dn2" value="${name}"></div><div class="modal-foot"><button class="btn btn-primary" onclick="saveEditDept('${name}')">Simpan</button><button class="btn btn-ghost" onclick="closeMo()">Batal</button></div>`)}
-async function saveEditDept(old){const n=document.getElementById('dn2').value.trim();if(!n)return;const d=G('ess5_depts',[]);const i=d.indexOf(old);try{await api('DELETE',`departments?name=${encodeURIComponent(old)}`);await api('POST','departments',{name:n});if(i>=0)d[i]=n;S('ess5_depts',d);closeMo();toast('✓');renderAdminDept()}catch(e){toast('Gagal: '+e.message)}}
+async function saveEditDept(old){
+  const n=document.getElementById('dn2').value.trim();if(!n)return;
+  const d=G('ess5_depts',[]);const i=d.indexOf(old);
+  try{
+    await api('DELETE',`departments?name=${encodeURIComponent(old)}`);
+    await api('POST','departments',{name:n});
+    if(i>=0)d[i]=n;S('ess5_depts',d);closeMo();toast('✓ Diupdate');renderAdminDept();
+  }catch(e){toast('Gagal: '+e.message);}
+}
+async function delDept(name){
+  const cnt=G('ess5_emps',[]).filter(e=>e.dept===name).length;
+  if(cnt>0&&!confirm(`Dept "${name}" masih ${cnt} karyawan. Hapus tetap?`))return;
+  try{
+    await api('DELETE',`departments?name=${encodeURIComponent(name)}`);
+    S('ess5_depts',G('ess5_depts',[]).filter(d=>d!==name));
+    toast('Dihapus');renderAdminDept();
+  }catch(e){toast('Gagal: '+e.message);}
+}
 
 /* ══ ACTIONS ══ */
 async function doChangePass(){
-  const old=document.getElementById('cp-old').value,nw=document.getElementById('cp-new').value,conf=document.getElementById('cp-conf').value;
+  const old=document.getElementById('cp-old').value;
+  const nw=document.getElementById('cp-new').value;
+  const conf=document.getElementById('cp-conf').value;
   const msg=document.getElementById('cp-msg');
   if(nw.length<5){msg.innerHTML=`<div class="alert a-err">Password baru min 5 karakter.</div>`;return}
   if(nw!==conf){msg.innerHTML=`<div class="alert a-err">Konfirmasi tidak cocok.</div>`;return}
-  try {
-    await api('POST','password',{
-      action:'change', nik:CU.nik,
-      type: isSysUser()?'sysuser':'employee',
-      oldPassword:old, newPassword:nw
-    });
+  try{
+    await api('POST','password',{action:'change',nik:CU.nik,type:isSysUser()?'sysuser':'employee',oldPassword:old,newPassword:nw});
     msg.innerHTML=`<div class="alert a-ok">✓ Password berhasil diubah!</div>`;
     document.getElementById('cp-old').value='';document.getElementById('cp-new').value='';document.getElementById('cp-conf').value='';
-  } catch(e) {
-    msg.innerHTML=`<div class="alert a-err">${e.message}</div>`;
-  }
+  }catch(e){msg.innerHTML=`<div class="alert a-err">${e.message}</div>`;}
 }
-
 function openCancelLeave(id){
   const l=G('ess5_leaves',[]).find(x=>x.id===id);
   openMo(`<div class="modal-title">Batalkan Cuti</div>
@@ -2008,32 +2001,35 @@ function openCancelLeave(id){
 }
 
 async function doCancel(id){
-  const reason=document.getElementById('cancel-reason').value.trim();if(!reason)return toast('Isi alasan pembatalan');
+  const reason=document.getElementById('cancel-reason').value.trim();
+  if(!reason)return toast('Isi alasan pembatalan');
   const leaves=G('ess5_leaves',[]);const idx=leaves.findIndex(l=>l.id===id);if(idx<0)return;
   const l=leaves[idx];const wasApproved=l.status==='approved';
-  try {
+  try{
     await api('PUT','leaves',{id,action:'cancel',reason});
     l.status='cancelled';l.cancelReason=reason;l.cancelledAt=new Date().toISOString();
-    // Kembalikan saldo di in-memory
     if(wasApproved){
       const emps=G('ess5_emps',[]);const ei=emps.findIndex(e=>e.nik===l.empNik);
       if(ei>=0){
-        if(l.leaveType==='Cuti Tahunan'){emps[ei]=restoreAnn(emps[ei],l.days);apiUpdateEmp(emps[ei].nik,{annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3});}
-        else if(l.leaveType==='Cuti Besar'){
-          emps[ei].bigLeave=(emps[ei].bigLeave||0)+l.days;
+        if(l.leaveType==='Cuti Tahunan'){
+          emps[ei]=restoreAnn(emps[ei],l.days||countWorkdays(l.dates||[]));
+          apiUpdateEmp(emps[ei].nik,{annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3});
+        } else if(l.leaveType==='Cuti Besar'){
+          const d=l.days||countWorkdays(l.dates||[]);
+          emps[ei].bigLeave=(emps[ei].bigLeave||0)+d;
           apiUpdateEmp(emps[ei].nik,{bigLeave:emps[ei].bigLeave});
-          api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:-l.days,note:`Saldo dikembalikan — pembatalan cuti`}).catch(()=>{});
+          api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:-d,note:`Saldo dikembalikan — pembatalan cuti`}).catch(()=>{});
         }
         S('ess5_emps',emps);if(CE&&emps[ei].nik===CE.nik)CE=emps[ei];
       }
     }
     S('ess5_leaves',leaves);
     const sups=G('ess5_sups',[]);const emp=G('ess5_emps',[]).find(e=>e.nik===l.empNik)||{dept:''};
-    sups.filter(s=>s.dept===emp.dept).forEach(s=>pushNotif(s.nik,'Cuti Dibatalkan',`${CE.name} membatalkan ${l.leaveType} ${formatDates(l.dates)}. Alasan: ${reason}`,id));
-    closeMo();toast('Cuti dibatalkan'+(wasApproved?' — saldo dikembalikan':''));renderLeave();renderDash();
-  } catch(e){toast('Gagal: '+e.message);}
+    sups.filter(s=>s.dept===emp.dept).forEach(s=>pushNotif(s.nik,'Cuti Dibatalkan',`${CE?CE.name:'Karyawan'} membatalkan ${l.leaveType} ${formatDates(l.dates)}. Alasan: ${reason}`,id));
+    closeMo();toast('Cuti dibatalkan'+(wasApproved?' — saldo dikembalikan':''));
+    renderLeave();renderDash();
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 function openLeaveForm(){
   const sups=G('ess5_sups',[]);
   const lvl1=sups.filter(s=>s.dept===CE.dept&&s.nik!==CE.nik&&s.level===1);
@@ -2071,39 +2067,43 @@ function addDate(){const r=document.createElement('div');r.className='date-row';
 function rmDate(b){if(document.querySelectorAll('.date-row').length>1){b.parentElement.remove();updWD()}}
 
 async function submitLeave(){
-  const sup=document.getElementById('lv-sup').value;const type=document.getElementById('lv-type').value;
+  const sup=document.getElementById('lv-sup').value;
+  const type=document.getElementById('lv-type').value;
   const reason=document.getElementById('lv-reason').value.trim();
   const dates=[...document.querySelectorAll('.lv-date')].map(d=>d.value).filter(Boolean).sort();
-  if(!sup)return toast('Pilih atasan');if(!dates.length)return toast('Masukkan tanggal cuti');if(!reason)return toast('Isi alasan cuti');
-  const wdays=countWorkdays(dates);if(wdays===0)return toast('Tidak ada hari kerja dalam tanggal yang dipilih');
-  const bal=type==='Cuti Tahunan'?totalAnn(CE):CE.bigLeave||0;
+  if(!sup)return toast('Pilih atasan');
+  if(!dates.length)return toast('Masukkan tanggal cuti');
+  if(!reason)return toast('Isi alasan cuti');
+  const wdays=countWorkdays(dates);
+  if(wdays===0)return toast('Tidak ada hari kerja dalam tanggal yang dipilih');
+  const bal=type==='Cuti Tahunan'?totalAnn(CE):(CE.bigLeave||0);
   if(wdays>bal)return toast(`Saldo ${type} tidak cukup (${bal} hr tersisa)`);
   const sups=G('ess5_sups',[]);const sd=sups.find(s=>s.nik===sup);
-  // Cari Level 2 jika ada
-  const lvl2=sups.find(s=>s.dept===CE.dept&&s.level===2);
-  try {
+  const lvl2=sups.find(s=>s.dept===CE.dept&&s.level===2&&s.nik!==sup);
+  try{
     const result=await api('POST','leaves',{
-      emp_nik:CE.nik, leave_type:type, dates, reason,
-      approver1_nik:sup, approver1_name:sd?.name||'-', approver1_pos:sd?.position||'L1',
-      approver2_nik:lvl2?.nik||null, approver2_name:lvl2?.name||null, approver2_pos:lvl2?.position||null
+      emp_nik:CE.nik,leave_type:type,dates,reason,
+      approver1_nik:sup,approver1_name:sd?.name||'-',approver1_pos:sd?.position||'L1',
+      approver2_nik:lvl2?.nik||null,approver2_name:lvl2?.name||null,approver2_pos:lvl2?.position||null
     });
-    const newLeave={id:result.id,empNik:CE.nik,leaveType:type,dates,days:wdays,reason,status:'pending',
-      approver1Nik:sup,approver1Name:sd?.name||'-',approver1Pos:sd?.position||'L1',
+    const newLeave={id:result.id,empNik:CE.nik,leaveType:type,dates,days:wdays,reason,
+      status:'pending',approver1Nik:sup,approver1Name:sd?.name||'-',approver1Pos:sd?.position||'L1',
       approver2Nik:lvl2?.nik||null,appliedAt:new Date().toISOString()};
     const leaves=G('ess5_leaves',[]);leaves.unshift(newLeave);S('ess5_leaves',leaves);
     pushNotif(sup,'🔔 Pengajuan Cuti Baru',`${CE.name} mengajukan ${type} (${wdays} hr kerja) tgl ${formatDates(dates)}`,result.id);
     closeMo();toast('Pengajuan terkirim ✓');renderLeave();renderDash();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 function openApprModal(lid,action){
-  const l=G('ess5_leaves',[]).find(x=>x.id===lid);const e=G('ess5_emps',[]).find(x=>x.nik===l.empNik)||{name:'-'};
-  const lbl=action==='approve'?'Setujui':'Tolak';const cls=action==='approve'?'btn-green':'btn-red';
+  const l=G('ess5_leaves',[]).find(x=>x.id===lid);if(!l)return;
+  const e=G('ess5_emps',[]).find(x=>x.nik===l.empNik)||{name:'-'};
+  const lbl=action==='approve'?'Setujui':'Tolak';
+  const cls=action==='approve'?'btn-green':'btn-red';
   openMo(`<div class="modal-title">Konfirmasi ${lbl} Cuti</div>
     <div class="modal-sub">${e.name} — ${l.leaveType} (${countWorkdays(l.dates||[])} hr kerja) | ${formatDates(l.dates)}</div>
     <div class="alert ${action==='approve'?'a-ok':'a-warn'}">${action==='approve'?'✓ Anda akan menyetujui pengajuan ini.':'✗ Anda akan menolak pengajuan ini.'}</div>
     <div class="field"><label>Catatan</label>
-      <textarea id="mo-note" style="width:100%;height:75px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none" placeholder="Catatan..."></textarea>
+      <textarea id="mo-note" style="width:100%;height:75px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none" placeholder="Catatan (opsional)..."></textarea>
     </div>
     <div class="modal-foot">
       <button class="btn ${cls}" onclick="processAppr('${lid}','${action}')">Proses Sekarang</button>
@@ -2124,73 +2124,68 @@ async function processAppr(lid,action){
   if(action==='reject'){
     apiAction=myLvl===1?'reject1':'reject2';
     l.status='rejected';l.note=note;l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
+    if(myLvl===1){l.rejected1At=new Date().toISOString();l.reject1Reason=note||'';}
+    else{l.rejected2At=new Date().toISOString();l.reject2Reason=note||'';}
     pushNotif(l.empNik,'Cuti Ditolak',`${l.leaveType} ${formatDates(l.dates)} ditolak oleh ${CE.name}. Catatan: ${note||'-'}`,l.id);
   } else {
     if(!l.approvals.includes(CE.nik))l.approvals.push(CE.nik);
     if(myLvl>=maxLvl){
       apiAction=myLvl===1?'approve1':'approve2';
       l.status='approved';l.note=note;l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
+      if(myLvl===1)l.approved1At=new Date().toISOString();
+      else l.approved2At=new Date().toISOString();
+      const days=l.days||countWorkdays(l.dates||[]);
       const ei=emps.findIndex(x=>x.nik===l.empNik);
       if(ei>=0){
-        if(l.leaveType==='Cuti Tahunan'){emps[ei]=deductAnn(emps[ei],l.days);balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};}
-        else if(l.leaveType==='Cuti Besar'){
-          emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-l.days);
+        if(l.leaveType==='Cuti Tahunan'){
+          emps[ei]=deductAnn(emps[ei],days);
+          balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};
+        } else if(l.leaveType==='Cuti Besar'){
+          emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-days);
           balUpdate={nik:emps[ei].nik,bigLeave:emps[ei].bigLeave};
-          api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:l.days,note:`Digunakan — pengajuan ${l.id.slice(0,12)}`}).catch(()=>{});
+          api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:days,note:`Digunakan — pengajuan ${l.id.slice(0,12)}`}).catch(()=>{});
         }
         S('ess5_emps',emps);if(emps[ei].nik===CE.nik)CE=emps[ei];
       }
       pushNotif(l.empNik,'✅ Cuti Disetujui',`${l.leaveType} ${formatDates(l.dates)} disetujui sepenuhnya!`,l.id);
     } else {
-      apiAction='approve1';
-      l.note=note;const nextSup=ds.find(s=>s.level===myLvl+1);
+      apiAction='approve1';l.note=note;
+      l.approved1At=new Date().toISOString();
+      const nextSup=ds.find(s=>s.level===myLvl+1);
       if(nextSup)pushNotif(nextSup.nik,'🔔 Perlu Approval Anda',`${e.name} mengajukan ${l.leaveType}. Level 1 sudah approve.`,l.id);
       pushNotif(l.empNik,'Cuti Disetujui Level 1',`${l.leaveType} Anda disetujui ${CE.name}. Menunggu approval Level 2.`,l.id);
     }
   }
-  try {
+  try{
     await api('PUT','leaves',{id:lid,action:apiAction,approver_nik:CE.nik,reason:note});
-    if(balUpdate) apiUpdateEmp(balUpdate.nik,balUpdate).catch(()=>{});
-    S('ess5_leaves',leaves);closeMo();toast(action==='approve'?'Diproses ✓':'Ditolak');renderApproval();
-  } catch(e){toast('Gagal: '+e.message);}
+    if(balUpdate)apiUpdateEmp(balUpdate.nik,balUpdate).catch(()=>{});
+    S('ess5_leaves',leaves);closeMo();
+    toast(action==='approve'?'Diproses ✓':'Ditolak');renderApproval();
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 async function doBulkUpdate(){
-  const days=parseInt(document.getElementById('bulk-days').value);const year=parseInt(document.getElementById('bulk-year').value);
+  const days=parseInt(document.getElementById('bulk-days').value);
+  const year=parseInt(document.getElementById('bulk-year').value);
   if(!days||days<1)return toast('Masukkan jumlah hari valid');
-  const dept=document.getElementById('bulk-dept')?.value||'ALL';
-  if(!confirm(`Tambah saldo cuti tahunan (Y1) ${dept==='ALL'?'semua karyawan':'dept '+dept} untuk tahun ${year}?`))return;
-  try {
-    const result=await api('POST','balance/bulk',{dept,amount:days,year});
-    // Update in-memory
+  if(!confirm(`Tambah saldo cuti tahunan (Y1) semua karyawan untuk tahun ${year}?`))return;
+  try{
+    const result=await api('POST','balance/bulk',{dept:'ALL',amount:days,year});
     const emps=G('ess5_emps',[]);
     emps.forEach((e,i)=>{
-      if(dept!=='ALL'&&e.dept!==dept)return;
       if(!e.joinDate)return;
       const jd=new Date(e.joinDate+' 12:00:00');
       const elig=new Date(jd.getFullYear()+1,jd.getMonth()+1,1);
       if(elig.getFullYear()>year)return;
       let add=days;
-      if(elig.getFullYear()===year){const ml=12-elig.getMonth();add=Math.round((ml/12)*days)}
+      if(elig.getFullYear()===year){const ml=12-elig.getMonth();add=Math.round((ml/12)*days);}
       if(add>0)emps[i].annY1=(emps[i].annY1||0)+add;
     });
     S('ess5_emps',emps);if(!isSysUser()&&CE)CE=emps.find(e=>e.nik===CE.nik)||CE;
-    toast(`✓ Saldo Y1 diupdate untuk ${result.updated} karyawan`);
-  } catch(e){toast('Gagal: '+e.message);}
+    toast(`✓ Saldo Y1 diupdate untuk ${result.updated} karyawan tahun ${year}`);
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
-async function delDept(name){
-  const cnt=G('ess5_emps',[]).filter(e=>e.dept===name).length;
-  if(cnt>0&&!confirm(`Dept "${name}" masih ${cnt} karyawan. Hapus tetap?`))return;
-  try {
-    await api('DELETE',`departments?name=${encodeURIComponent(name)}`);
-    S('ess5_depts',G('ess5_depts',[]).filter(d=>d!==name));
-    toast('Dihapus');renderAdminDept();
-  } catch(e){toast('Gagal: '+e.message);}
-}
-
 function openEditBal(nik){
-  const e=G('ess5_emps',[]).find(x=>x.nik===nik);
+  const e=G('ess5_emps',[]).find(x=>x.nik===nik);if(!e)return;
   openMo(`<div class="modal-title">Edit Saldo Cuti</div>
     <div class="modal-sub">${e.name} — ${e.nik}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -2205,30 +2200,27 @@ function openEditBal(nik){
     </div>`);
 }
 async function saveEditBal(nik){
-  const y1=parseInt(document.getElementById('eb-y1').value)||0,y2=parseInt(document.getElementById('eb-y2').value)||0;
-  const y3=parseInt(document.getElementById('eb-y3').value)||0,big=parseInt(document.getElementById('eb-big').value)||0;
-  try {
+  const y1=parseInt(document.getElementById('eb-y1').value)||0;
+  const y2=parseInt(document.getElementById('eb-y2').value)||0;
+  const y3=parseInt(document.getElementById('eb-y3').value)||0;
+  const big=parseInt(document.getElementById('eb-big').value)||0;
+  try{
     await api('PUT','balance',{nik,ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big});
     const emps=G('ess5_emps',[]);const i=emps.findIndex(e=>e.nik===nik);
     if(i>=0){emps[i].annY1=y1;emps[i].annY2=y2;emps[i].annY3=y3;emps[i].bigLeave=big;S('ess5_emps',emps);}
     if(!isSysUser()&&CE&&CE.nik===nik)CE={...CE,annY1:y1,annY2:y2,annY3:y3,bigLeave:big};
     closeMo();toast('Saldo diupdate ✓');renderAdminBalance();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 function openAddEmp(){
   const depts=G('ess5_depts',[]);
   openMo(`<div class="modal-title">Tambah Karyawan Baru</div>
     <div class="modal-sub">NIK diisi manual (format: YYMM + nomor urut, contoh: 2606001)</div>
     <div class="field"><label>NIK</label><input type="text" id="ae-nik" placeholder="contoh: 2606001"></div>
-    <div class="field"><label>Nama Lengkap</label><input type="text" id="ae-name" placeholder="contoh: Budi Santoso"></div>
+    <div class="field"><label>Nama Lengkap</label><input type="text" id="ae-name"></div>
     <div class="field"><label>Departemen</label><input type="text" id="ae-dept" list="ae-dl"><datalist id="ae-dl">${depts.map(d=>`<option value="${d}">`).join('')}</datalist></div>
     <div class="field"><label>Status</label>
-      <select id="ae-status">
-        <option value="kontrak">Kontrak</option>
-        <option value="tetap">Tetap</option>
-      </select>
-    </div>
+      <select id="ae-status"><option value="kontrak">Kontrak</option><option value="tetap">Tetap</option></select></div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
       <div class="field"><label>Y1</label><input type="number" id="ae-y1" value="0" min="0"></div>
       <div class="field"><label>Y2</label><input type="number" id="ae-y2" value="0" min="0"></div>
@@ -2244,35 +2236,36 @@ function openAddEmp(){
       <button class="btn btn-ghost" onclick="closeMo()">Batal</button>
     </div>`);
 }
-
 async function saveAddEmp(){
-  const nik=document.getElementById('ae-nik').value.trim(),name=document.getElementById('ae-name').value.trim(),dept=document.getElementById('ae-dept').value.trim();
+  const nik=document.getElementById('ae-nik').value.trim();
+  const name=document.getElementById('ae-name').value.trim();
+  const dept=document.getElementById('ae-dept').value.trim();
   const status=document.getElementById('ae-status').value;
-  const y1=parseInt(document.getElementById('ae-y1').value)||0,y2=parseInt(document.getElementById('ae-y2').value)||0;
-  const y3=parseInt(document.getElementById('ae-y3').value)||0,big=parseInt(document.getElementById('ae-big').value)||0;
-  const join=document.getElementById('ae-join').value,perm=document.getElementById('ae-perm').value||null;
+  const y1=parseInt(document.getElementById('ae-y1').value)||0;
+  const y2=parseInt(document.getElementById('ae-y2').value)||0;
+  const y3=parseInt(document.getElementById('ae-y3').value)||0;
+  const big=parseInt(document.getElementById('ae-big').value)||0;
+  const join=document.getElementById('ae-join').value;
+  const perm=document.getElementById('ae-perm').value||null;
   if(!nik||!name||!dept)return toast('NIK, nama, departemen wajib diisi');
-  const used=G('ess5_emps',[]).map(e=>e.name.toLowerCase().replace(/\s+/g,'.'));
-  const username=autoUser(name,used);
-  try {
-    await api('POST','employees',{
-      nik,name,dept,status,
-      join_date:join||null,
-      permanent_date:status==='tetap'?(perm||join):null,
-      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,
-      username,password:'12345'
-    });
-    const emps=G('ess5_emps',[]);
-    emps.push({nik,name,dept,role:'employee',annY1:y1,annY2:y2,annY3:y3,bigLeave:big,status,joinDate:join,permanentDate:status==='tetap'?(perm||join):null});
+  const emps=G('ess5_emps',[]);
+  if(emps.find(e=>e.nik===nik))return toast('NIK sudah terdaftar');
+  const usedNames=emps.map(e=>e.name.toLowerCase().replace(/\s+/g,'.'));
+  const username=autoUser(name,usedNames);
+  try{
+    await api('POST','employees',{nik,name,dept,status,
+      join_date:join||null,permanent_date:status==='tetap'?(perm||join):null,
+      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,username,password:'12345'});
+    emps.push({nik,name,dept,role:'employee',annY1:y1,annY2:y2,annY3:y3,bigLeave:big,
+      status,joinDate:join,permanentDate:status==='tetap'?(perm||join):null,username});
     S('ess5_emps',emps);
     closeMo();toast(`✓ Karyawan ditambahkan! User: ${username} / Pass: 12345`);renderAdminEmp();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 function openEditEmp(nik){
-  const e=G('ess5_emps',[]).find(x=>x.nik===nik),depts=G('ess5_depts',[]);
+  const e=G('ess5_emps',[]).find(x=>x.nik===nik),u=G('ess5_users',[]).find(x=>x.nik===nik)||{},depts=G('ess5_depts',[]);
   openMo(`<div class="modal-title">Edit Karyawan</div>
-    <div class="modal-sub">NIK: ${nik}</div>
+    <div class="modal-sub">NIK: ${nik} | Username: ${u.username||'-'}</div>
     <div class="field"><label>Nama</label><input type="text" id="ee-name" value="${e.name}"></div>
     <div class="field"><label>Departemen</label><input type="text" id="ee-dept" value="${e.dept}" list="ee-dl"><datalist id="ee-dl">${depts.map(d=>`<option value="${d}">`).join('')}</datalist></div>
     <div class="field"><label>Status</label><select id="ee-status"><option value="kontrak" ${e.status==='kontrak'?'selected':''}>Kontrak</option><option value="tetap" ${e.status==='tetap'?'selected':''}>Tetap</option></select></div>
@@ -2292,46 +2285,44 @@ function openEditEmp(nik){
       <button class="btn btn-ghost" onclick="closeMo()">Batal</button>
     </div>`);
 }
-
 async function saveEditEmp(nik){
-  const name=document.getElementById('ee-name').value.trim(),dept=document.getElementById('ee-dept').value.trim();
+  const name=document.getElementById('ee-name').value.trim();
+  const dept=document.getElementById('ee-dept').value.trim();
   const status=document.getElementById('ee-status').value;
-  const y1=parseInt(document.getElementById('ee-y1').value)||0,y2=parseInt(document.getElementById('ee-y2').value)||0;
-  const y3=parseInt(document.getElementById('ee-y3').value)||0,big=parseInt(document.getElementById('ee-big').value)||0;
-  const join=document.getElementById('ee-join').value,perm=document.getElementById('ee-perm').value||null;
+  const y1=parseInt(document.getElementById('ee-y1').value)||0;
+  const y2=parseInt(document.getElementById('ee-y2').value)||0;
+  const y3=parseInt(document.getElementById('ee-y3').value)||0;
+  const big=parseInt(document.getElementById('ee-big').value)||0;
+  const join=document.getElementById('ee-join').value;
+  const perm=document.getElementById('ee-perm').value||null;
   const pass=document.getElementById('ee-pass').value.trim();
   if(!name||!dept)return toast('Nama dan departemen wajib diisi');
-  try {
-    await api('PUT','employees',{
-      nik,name,dept,status,
-      join_date:join||null,
-      permanent_date:status==='tetap'?(perm||join):null,
-      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,
-      ...(pass?{password:pass}:{})
-    });
+  try{
+    await api('PUT','employees',{nik,name,dept,status,
+      join_date:join||null,permanent_date:status==='tetap'?(perm||join):null,
+      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,...(pass?{password:pass}:{})});
     const emps=G('ess5_emps',[]);const i=emps.findIndex(e=>e.nik===nik);
-    emps[i]={...emps[i],name,dept,status,annY1:y1,annY2:y2,annY3:y3,bigLeave:big,joinDate:join,permanentDate:status==='tetap'?(perm||join):null};
-    S('ess5_emps',emps);
+    if(i>=0){emps[i]={...emps[i],name,dept,status,annY1:y1,annY2:y2,annY3:y3,bigLeave:big,
+      joinDate:join,permanentDate:status==='tetap'?(perm||join):null};S('ess5_emps',emps);}
     if(!isSysUser()&&CE&&CE.nik===nik)CE=emps[i];
     closeMo();toast('Data diupdate ✓');renderAdminEmp();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
-
 async function delEmp(nik){
   if(!confirm('Hapus karyawan ini? Semua data cuti ikut terhapus.'))return;
-  try {
+  try{
     await api('DELETE',`employees?nik=${nik}`);
     S('ess5_emps',G('ess5_emps',[]).filter(e=>e.nik!==nik));
     S('ess5_leaves',G('ess5_leaves',[]).filter(l=>l.empNik!==nik));
     toast('Karyawan dihapus');renderAdminEmp();
-  } catch(e){toast('Gagal: '+e.message);}
+  }catch(e){toast('Gagal: '+e.message);}
 }
 async function resetEmpPass(nik,name){
   if(!confirm(`Reset password ${name} ke default 12345?`))return;
-  try {
+  try{
     await api('POST','password',{action:'reset',nik,type:'employee'});
     toast(`✓ Password ${name} direset ke 12345`);
-  } catch(e) { toast('Gagal: '+e.message); }
+  }catch(e){toast('Gagal: '+e.message);}
 }
 
 /* ══ EXPORT & TEMPLATE ══ */
@@ -2476,24 +2467,12 @@ function parseCSVLine(line){
   for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++}else inQ=!inQ}else if(c===','&&!inQ){result.push(cur);cur=''}else cur+=c}
   result.push(cur);return result;
 }
-
 async function processCSV(){
   const raw=document.getElementById('csv-manual').value.trim();
   if(!raw)return toast('Masukkan data CSV');
-
-  const emps=G('ess5_emps',[]);
-  const depts=G('ess5_depts',[]);
-  const toInsert=[];
-  const newDepts=[];
-  let skipped=0;
-
-  // Kumpulkan semua username yang sudah ada (DB + yang akan diinsert)
-  // Ini fix masalah duplicate username
-  const usedUsernames=new Set(emps.map(e=>{
-    // Ambil username dari emp_users jika ada, atau generate dari nama
-    return (e.username||autoUser(e.name,[]));
-  }));
-
+  const emps=G('ess5_emps',[]);const depts=G('ess5_depts',[]);
+  const toInsert=[];const newDepts=[];let skipped=0;
+  const usedUsernames=new Set(emps.map(e=>e.username||autoUser(e.name,[])));
   raw.split('\n').filter(Boolean).forEach(line=>{
     const p=parseCSVLine(line);
     if(p.length<4||!p[1]||!p[2])return;
@@ -2502,84 +2481,42 @@ async function processCSV(){
     const y3=parseInt(p[5])||0,y2=parseInt(p[6])||0,y1=parseInt(p[7])||0,big=parseInt(p[8])||0;
     const joinDate=(p[9]||'').trim()||null;
     const permanentDate=(p[10]||'').trim()||null;
-
-    if(!nik||!name){skipped++;return}
-    if(emps.find(e=>e.nik===nik)){skipped++;return}
-
-    // Generate username unik — cek dari usedUsernames Set
+    if(!nik||!name){skipped++;return;}
+    if(emps.find(e=>e.nik===nik)){skipped++;return;}
     let username=autoUser(name,[...usedUsernames]);
-    // Pastikan benar-benar unik dengan tambah suffix jika perlu
     let attempt=username;let counter=2;
     while(usedUsernames.has(attempt)){attempt=username+counter;counter++;}
-    username=attempt;
-    usedUsernames.add(username); // Tandai sudah dipakai
-
-    toInsert.push({
-      nik,name,dept,status,
-      join_date:joinDate,
+    username=attempt;usedUsernames.add(username);
+    toInsert.push({nik,name,dept,status,join_date:joinDate,
       permanent_date:status==='tetap'?(permanentDate||joinDate):null,
-      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,
-      username,password:'12345'
-    });
-
-    // Track departemen baru
-    if(dept&&!depts.includes(dept)&&!newDepts.includes(dept)){
-      newDepts.push(dept);
-    }
+      ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,username,password:'12345'});
+    if(dept&&!depts.includes(dept)&&!newDepts.includes(dept))newDepts.push(dept);
   });
-
   if(!toInsert.length)return toast(`Tidak ada data baru (${skipped} dilewati)`);
-
-  // Tampilkan progress
   toast(`Mengupload ${toInsert.length} karyawan...`);
-
-  let added=0, failed=0, failedNames=[];
-
-  // Upload satu per satu agar bisa skip yang gagal tanpa batalkan semua
+  let added=0,failed=0,failedNames=[];
   for(const emp of toInsert){
-    try {
+    try{
       await api('POST','employees',emp);
-      emps.push({
-        nik:emp.nik,name:emp.name,dept:emp.dept,role:'employee',
-        annY1:emp.ann_y1,annY2:emp.ann_y2,annY3:emp.ann_y3,
-        bigLeave:emp.big_leave,status:emp.status,
-        joinDate:emp.join_date,
-        permanentDate:emp.permanent_date,
-        username:emp.username
-      });
+      emps.push({nik:emp.nik,name:emp.name,dept:emp.dept,role:'employee',
+        annY1:emp.ann_y1,annY2:emp.ann_y2,annY3:emp.ann_y3,bigLeave:emp.big_leave,
+        status:emp.status,joinDate:emp.join_date,permanentDate:emp.permanent_date,username:emp.username});
       added++;
-    } catch(e){
-      failed++;
-      failedNames.push(emp.name+' ('+e.message+')');
-    }
+    }catch(e){failed++;failedNames.push(emp.name+' ('+e.message+')');}
   }
-
-  // Simpan ke in-memory
   S('ess5_emps',emps);
-
-  // Simpan departemen baru ke DB + in-memory
-  if(newDepts.length>0){
-    for(const dept of newDepts){
-      try {
-        await api('POST','departments',{name:dept});
-        depts.push(dept);
-      } catch(e){
-        // Dept mungkin sudah ada — tidak masalah
-        if(!depts.includes(dept))depts.push(dept);
-      }
-    }
-    S('ess5_depts',depts);
+  for(const dept of newDepts){
+    try{await api('POST','departments',{name:dept});depts.push(dept);}
+    catch(_){if(!depts.includes(dept))depts.push(dept);}
   }
-
+  S('ess5_depts',depts);
   document.getElementById('csv-manual').value='';
-
   if(failed===0){
-    toast(`✓ ${added} karyawan berhasil ditambahkan${skipped?' ('+skipped+' dilewati)':''}${newDepts.length?' + '+newDepts.length+' dept baru':''}`);
-  } else {
+    toast(`✓ ${added} karyawan ditambahkan${skipped?' ('+skipped+' dilewati)':''}${newDepts.length?' + '+newDepts.length+' dept baru':''}`);
+  }else{
     toast(`✓ ${added} berhasil, ${failed} gagal: ${failedNames.slice(0,2).join(', ')}${failed>2?'...':''}`);
-    console.error('Failed uploads:',failedNames);
+    console.error('Failed:',failedNames);
   }
-
   renderAdminEmp();
 }
 function handleUpload(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{document.getElementById('csv-manual').value=e.target.result;toast('File dimuat. Klik Proses Data.')};r.readAsText(f)}
@@ -2599,7 +2536,8 @@ function fmtDate(iso){
 }
 function formatDates(dates){if(!dates||!dates.length)return '-';if(dates.length===1)return fmtDate(dates[0]);return `${fmtDate(dates[0])} – ${fmtDate(dates[dates.length-1])} (${dates.length}hr)`}
 
-/* BOOT — tidak perlu initData, data dari Supabase */
+/* BOOT */
+/* data loaded via loadAllData() after login */
 </script>
 </body>
 </html>
