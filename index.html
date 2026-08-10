@@ -383,10 +383,10 @@ function normalizeLeave(l) {
     approved1At: l.approved1_at, rejected1At: l.rejected1_at, reject1Reason: l.reject1_reason,
     approver2Nik: l.approver2_nik, approver2Name: l.approver2_name, approver2Pos: l.approver2_pos,
     approved2At: l.approved2_at, rejected2At: l.rejected2_at, reject2Reason: l.reject2_reason,
-    appliedAt: l.applied_at, cancelledAt: l.cancelled_at, cancelReason: l.cancel_reason,
+    appliedAt: l.applied_at || l.appliedAt, cancelledAt: l.cancelled_at, cancelReason: l.cancel_reason,
     processedAt: l.approved2_at || l.approved1_at || l.rejected2_at || l.rejected1_at || null,
     days: (l.dates||[]).length,
-    note: l.reject1_reason || l.reject2_reason || '',
+    note: l.reject1_reason || l.reject2_reason || l.note || '',
   };
 }
 function normalizeNotif(n) {
@@ -1363,9 +1363,9 @@ function lcHTML(l,showActions){
   // Kumpulkan catatan approval dari DB fields
   const approvalNotes=[];
   if(l.reject1Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver1Name||'L1',note:l.reject1Reason});
-  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:'Disetujui'});
+  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:l.note||'Disetujui'});
   if(l.reject2Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver2Name||'L2',note:l.reject2Reason});
-  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:'Disetujui'});
+  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:l.note||'Disetujui'});
   const noteText=l.note||'';
   return `<div class="lc">
     <div class="lc-hdr">
@@ -1493,17 +1493,18 @@ function renderAdminLeaves(){
   const emps=G('ess5_emps',[]);const el=document.getElementById('al-list');
   if(!leaves.length){el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div><div>Belum ada pengajuan</div></div>`;return}
   el.innerHTML=`<div class="tw-wrap"><div class="tw-scroll"><table>
-    <thead><tr><th>Tgl Ajuan</th><th>NIK</th><th>Nama</th><th>Dept</th><th>Jenis</th><th>Tgl Cuti</th><th>Hr Kerja</th><th>Kategori</th><th>Status</th><th>Catatan</th></tr></thead>
+    <thead><tr><th>Tgl Pengajuan</th><th>NIK</th><th>Nama</th><th>Dept</th><th>Jenis</th><th>Tgl Cuti</th><th>Hr Kerja</th><th>Kategori</th><th>Status</th><th>Catatan</th></tr></thead>
     <tbody>${leaves.map(l=>{
       const e=emps.find(x=>x.nik===l.empNik)||{name:'-',dept:'-'};
       const sb={pending:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'}[l.status];
       const sl={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'}[l.status];
       const cat=leaveCategory(l);const wdays=countWorkdays(l.dates||[]);
-      return `<tr><td>${fmtDate(l.appliedAt)}</td><td>${l.empNik}</td><td>${e.name}</td><td>${e.dept}</td><td>${l.leaveType}</td>
+      return `<tr>
+        <td style="white-space:nowrap">${fmtDate(l.appliedAt||l.applied_at)}</td><td>${l.empNik}</td><td>${e.name}</td><td>${e.dept}</td><td>${l.leaveType}</td>
         <td style="white-space:nowrap">${formatDates(l.dates)}</td><td><b>${wdays}</b></td>
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
-        <td style="color:var(--text2);font-size:11px;max-width:130px">${l.cancelReason?'Batal:'+l.cancelReason:l.note||'-'}</td></tr>`;
+        <td style="color:var(--text2);font-size:11px;max-width:160px;white-space:normal;word-break:break-word">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.note||'-')}</td></tr>`;
     }).join('')}</tbody></table></div></div>`;
 }
 
@@ -2358,7 +2359,7 @@ function renderSupLeaveLog(){
 
   el.innerHTML=`<div class="tw-wrap"><div class="tw-scroll"><table>
     <thead><tr>
-      <th>Tgl Ajuan</th><th>NIK</th><th>Nama</th><th>Dept</th>
+      <th>Tgl Pengajuan</th><th>NIK</th><th>Nama</th><th>Dept</th>
       <th>Jenis Cuti</th><th>Tgl Cuti</th><th>Hr Kerja</th>
       <th>Kategori</th><th>Status</th><th>Diproses</th><th>Catatan</th>
     </tr></thead>
@@ -2379,7 +2380,7 @@ function renderSupLeaveLog(){
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
         <td style="font-size:12px;color:var(--text2)">${l.processedAt?fmtDate(l.processedAt):'-'}</td>
-        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?'Batal: '+l.cancelReason:l.note||'-'}</td>
+        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.note||'-')}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
