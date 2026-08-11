@@ -376,19 +376,46 @@ function normalizeSup(s) {
   return { id: s.id, nik: s.nik, dept: s.dept, level: s.level, position: s.position, name: s.name };
 }
 function normalizeLeave(l) {
+  // approveNote: dari kolom baru approve1_note/approve2_note, atau fallback field lain
+  const approveNote = l.approve2_note || l.approve1_note || '';
+  const rejectNote  = l.reject2_reason || l.reject1_reason || '';
+  const cancelNote  = l.cancel_reason || '';
+  // processedAt: waktu terakhir diproses
+  const processedAt = l.approved2_at || l.approved1_at || l.rejected2_at || l.rejected1_at || null;
   return {
-    id: l.id, empNik: l.emp_nik, leaveType: l.leave_type,
-    dates: l.dates||[], reason: l.reason, status: l.status,
-    approver1Nik: l.approver1_nik, approver1Name: l.approver1_name, approver1Pos: l.approver1_pos,
-    approved1At: l.approved1_at, rejected1At: l.rejected1_at, reject1Reason: l.reject1_reason,
-    approver2Nik: l.approver2_nik, approver2Name: l.approver2_name, approver2Pos: l.approver2_pos,
-    approved2At: l.approved2_at, rejected2At: l.rejected2_at, reject2Reason: l.reject2_reason,
-    appliedAt: l.applied_at || l.appliedAt || '',
-    cancelledAt: l.cancelled_at, cancelReason: l.cancel_reason,
-    processedAt: l.approved2_at || l.approved1_at || l.rejected2_at || l.rejected1_at || null,
-    days: (l.dates||[]).length,
-    note: l.reject2_reason || l.reject1_reason || l.approve2_note || l.approve1_note || l.note || '',
-    approveNote: l.approve2_note || l.approve1_note || l.note || '',
+    id: l.id,
+    empNik: l.emp_nik,
+    leaveType: l.leave_type,
+    dates: l.dates || [],
+    reason: l.reason || '',
+    status: l.status,
+    // Approver 1
+    approver1Nik:  l.approver1_nik,
+    approver1Name: l.approver1_name,
+    approver1Pos:  l.approver1_pos,
+    approved1At:   l.approved1_at  || null,
+    rejected1At:   l.rejected1_at  || null,
+    reject1Reason: l.reject1_reason || '',
+    approve1Note:  l.approve1_note  || '',
+    // Approver 2
+    approver2Nik:  l.approver2_nik  || null,
+    approver2Name: l.approver2_name || null,
+    approver2Pos:  l.approver2_pos  || null,
+    approved2At:   l.approved2_at   || null,
+    rejected2At:   l.rejected2_at   || null,
+    reject2Reason: l.reject2_reason || '',
+    approve2Note:  l.approve2_note  || '',
+    // Timestamps
+    appliedAt:    l.applied_at   || null,
+    cancelledAt:  l.cancelled_at || null,
+    cancelReason: cancelNote,
+    processedAt:  processedAt,
+    // Computed
+    days: (l.dates || []).length,
+    // note: catatan yang relevan sesuai status
+    note:        rejectNote || approveNote || '',
+    approveNote: approveNote,
+    rejectNote:  rejectNote,
   };
 }
 function normalizeNotif(n) {
@@ -428,6 +455,12 @@ async function loadAllData() {
     try{ const cal2=await api('GET',`calendar?year=${yr+1}`);
          calStore[String(yr+1)]=Object.entries(cal2||{}).map(([date,description])=>({date,description})); }catch(_){calStore[String(yr+1)]=[]}
     S('ess5_calendar',calStore);
+    const sampleLeave = G('ess5_leaves',[]).find(l=>l.status==='approved'||l.status==='rejected');
+    if(sampleLeave) console.log('Sample leave from DB:',JSON.stringify({
+      id:sampleLeave.id, status:sampleLeave.status,
+      appliedAt:sampleLeave.appliedAt, approved1At:sampleLeave.approved1At,
+      approve1Note:sampleLeave.approve1Note, note:sampleLeave.note
+    }));
     console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:G('ess5_leaves',[]).length});
   } catch(e){ toast('⚠ Gagal memuat data: '+e.message); console.error(e); }
 }
@@ -1365,9 +1398,9 @@ function lcHTML(l,showActions){
   // Kumpulkan catatan approval dari DB fields
   const approvalNotes=[];
   if(l.reject1Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver1Name||'L1',note:l.reject1Reason});
-  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:(l.approveNote||l.note)||'Disetujui'});
+  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:l.approve1Note||'Disetujui'});
   if(l.reject2Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver2Name||'L2',note:l.reject2Reason});
-  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:(l.approveNote||l.note)||'Disetujui'});
+  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:l.approve2Note||'Disetujui'});
   const noteText=l.note||'';
   return `<div class="lc">
     <div class="lc-hdr">
@@ -1491,63 +1524,22 @@ function renderTeamLeave(){
 }
 
 function renderAdminLeaves(){
-  const allLeaves=G('ess5_leaves',[]);
-  const emps=G('ess5_emps',[]);
-  const el=document.getElementById('al-list');
-  if(!allLeaves.length){
-    el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div><div>Belum ada pengajuan</div></div>`;
-    return;
-  }
-  // Filter
-  const qEmp=(document.getElementById('al-emp')||{}).value||'';
-  const qDept=(document.getElementById('al-dept')||{}).value||'';
-  const qStatus=(document.getElementById('al-status')||{}).value||'';
-  const qType=(document.getElementById('al-type')||{}).value||'';
-  let filtered=allLeaves.filter(l=>{
-    const e=emps.find(x=>x.nik===l.empNik)||{name:'',dept:''};
-    if(qEmp&&!e.name.toLowerCase().includes(qEmp.toLowerCase())&&!l.empNik.includes(qEmp))return false;
-    if(qDept&&e.dept!==qDept)return false;
-    if(qStatus&&l.status!==qStatus)return false;
-    if(qType&&l.leaveType!==qType)return false;
-    return true;
-  }).sort((a,b)=>new Date(b.appliedAt||0)-new Date(a.appliedAt||0));
-
+  const leaves=G('ess5_leaves',[]).sort((a,b)=>new Date(b.appliedAt)-new Date(a.appliedAt));
+  const emps=G('ess5_emps',[]);const el=document.getElementById('al-list');
+  if(!leaves.length){el.innerHTML=`<div class="empty"><div class="empty-ico">📋</div><div>Belum ada pengajuan</div></div>`;return}
   el.innerHTML=`<div class="tw-wrap"><div class="tw-scroll"><table>
-    <thead>
-      <tr>
-        <th>Tgl Pengajuan</th><th>NIK</th><th>Nama</th><th>Dept</th>
-        <th>Jenis</th><th>Tgl Cuti</th><th>Hr Kerja</th>
-        <th>Kategori</th><th>Status</th><th>Catatan</th>
-      </tr>
-    </thead>
-    <tbody>${filtered.map(l=>{
+    <thead><tr><th>Tgl Ajuan</th><th>NIK</th><th>Nama</th><th>Dept</th><th>Jenis</th><th>Tgl Cuti</th><th>Hr Kerja</th><th>Kategori</th><th>Status</th><th>Catatan</th></tr></thead>
+    <tbody>${leaves.map(l=>{
       const e=emps.find(x=>x.nik===l.empNik)||{name:'-',dept:'-'};
-      const sb={pending:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'}[l.status]||'b-pending';
-      const sl={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'}[l.status]||l.status;
-      const cat=leaveCategory(l);
-      const wdays=countWorkdays(l.dates||[]);
-      // Tgl Pengajuan: appliedAt sudah di-normalize dari DB
-      const tglAjuan=l.appliedAt?fmtDate(l.appliedAt):'-';
-      // Catatan: prioritas cancel > reject > approve note > kosong
-      const catatan=l.cancelReason
-        ?('Batal: '+l.cancelReason)
-        :(l.reject2Reason||l.reject1Reason)
-          ?(l.reject2Reason||l.reject1Reason)
-          :(l.approveNote||l.note||'-');
-      return `<tr>
-        <td style="white-space:nowrap;font-size:12px">${tglAjuan}</td>
-        <td style="font-size:12px;color:var(--text2)">${l.empNik}</td>
-        <td>${e.name}</td>
-        <td>${e.dept}</td>
-        <td>${l.leaveType}</td>
-        <td style="white-space:nowrap">${formatDates(l.dates)}</td>
-        <td style="text-align:center"><b>${wdays}</b></td>
+      const sb={pending:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'}[l.status];
+      const sl={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'}[l.status];
+      const cat=leaveCategory(l);const wdays=countWorkdays(l.dates||[]);
+      return `<tr><td>${fmtDate(l.appliedAt)}</td><td>${l.empNik}</td><td>${e.name}</td><td>${e.dept}</td><td>${l.leaveType}</td>
+        <td style="white-space:nowrap">${formatDates(l.dates)}</td><td><b>${wdays}</b></td>
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
-        <td style="font-size:11px;color:var(--text2);max-width:160px;white-space:normal;word-break:break-word">${catatan}</td>
-      </tr>`;
-    }).join('')}</tbody>
-  </table></div></div>`;
+        <td style="color:var(--text2);font-size:11px;max-width:160px;white-space:normal;word-break:break-word">${l.cancelReason?("Batal: "+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||"-")}</td></tr>`;
+    }).join('')}</tbody></table></div></div>`;
 }
 
 function renderAdminBalance(){
@@ -2173,8 +2165,8 @@ async function processAppr(lid,action){
   } else {
     if(!l.approvals.includes(CE.nik))l.approvals.push(CE.nik);
     if(myLvl>=maxLvl){
-      apiAction=myLvl===1?'approve1':'approve2';l.approveNote=note||'';
-      l.status='approved';l.note=note;l.approveNote=note;l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
+      apiAction=myLvl===1?'approve1':'approve2';
+      l.status='approved';l.note=note;l.approveNote=note;l.approve1Note=myLvl===1?note:'';l.approve2Note=myLvl===2?note:'';l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
       if(myLvl===1)l.approved1At=new Date().toISOString();
       else l.approved2At=new Date().toISOString();
       const days=l.days||countWorkdays(l.dates||[]);
@@ -2569,8 +2561,13 @@ function openMo(html){document.getElementById('mbox').innerHTML=html;document.ge
 function closeMo(e){if(e&&e.target!==document.getElementById('mo'))return;document.getElementById('mo').classList.remove('show')}
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}
 function fmtDate(iso){
-  if(!iso)return '-';
-  const d=new Date(iso+' 12:00:00');
+  if(!iso||iso===''||iso==='null'||iso==='undefined')return '-';
+  // Handle ISO datetime string (2026-08-11T00:00:00)
+  const clean=String(iso).trim();
+  // Try parse as-is first
+  let d=new Date(clean);
+  // If invalid, try adding time component
+  if(isNaN(d.getTime()))d=new Date(clean+' 12:00:00');
   if(isNaN(d.getTime()))return '-';
   const dd=String(d.getDate()).padStart(2,'0');
   const mm=String(d.getMonth()+1).padStart(2,'0');
