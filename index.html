@@ -376,46 +376,24 @@ function normalizeSup(s) {
   return { id: s.id, nik: s.nik, dept: s.dept, level: s.level, position: s.position, name: s.name };
 }
 function normalizeLeave(l) {
-  // approveNote: dari kolom baru approve1_note/approve2_note, atau fallback field lain
-  const approveNote = l.approve2_note || l.approve1_note || '';
-  const rejectNote  = l.reject2_reason || l.reject1_reason || '';
-  const cancelNote  = l.cancel_reason || '';
-  // processedAt: waktu terakhir diproses
-  const processedAt = l.approved2_at || l.approved1_at || l.rejected2_at || l.rejected1_at || null;
+  const approve1Note = l.approve1_note || '';
+  const approve2Note = l.approve2_note || '';
+  const rejectNote   = l.reject2_reason || l.reject1_reason || '';
   return {
-    id: l.id,
-    empNik: l.emp_nik,
-    leaveType: l.leave_type,
-    dates: l.dates || [],
-    reason: l.reason || '',
-    status: l.status,
-    // Approver 1
-    approver1Nik:  l.approver1_nik,
-    approver1Name: l.approver1_name,
-    approver1Pos:  l.approver1_pos,
-    approved1At:   l.approved1_at  || null,
-    rejected1At:   l.rejected1_at  || null,
-    reject1Reason: l.reject1_reason || '',
-    approve1Note:  l.approve1_note  || '',
-    // Approver 2
-    approver2Nik:  l.approver2_nik  || null,
-    approver2Name: l.approver2_name || null,
-    approver2Pos:  l.approver2_pos  || null,
-    approved2At:   l.approved2_at   || null,
-    rejected2At:   l.rejected2_at   || null,
-    reject2Reason: l.reject2_reason || '',
-    approve2Note:  l.approve2_note  || '',
-    // Timestamps
-    appliedAt:    l.applied_at   || null,
-    cancelledAt:  l.cancelled_at || null,
-    cancelReason: cancelNote,
-    processedAt:  processedAt,
-    // Computed
-    days: (l.dates || []).length,
-    // note: catatan yang relevan sesuai status
-    note:        rejectNote || approveNote || '',
-    approveNote: approveNote,
-    rejectNote:  rejectNote,
+    id: l.id, empNik: l.emp_nik, leaveType: l.leave_type,
+    dates: l.dates||[], reason: l.reason||'', status: l.status,
+    approver1Nik: l.approver1_nik, approver1Name: l.approver1_name, approver1Pos: l.approver1_pos,
+    approved1At:   l.approved1_at||null, rejected1At: l.rejected1_at||null,
+    reject1Reason: l.reject1_reason||'', approve1Note: approve1Note,
+    approver2Nik: l.approver2_nik||null, approver2Name: l.approver2_name||null, approver2Pos: l.approver2_pos||null,
+    approved2At:   l.approved2_at||null, rejected2At: l.rejected2_at||null,
+    reject2Reason: l.reject2_reason||'', approve2Note: approve2Note,
+    appliedAt:    l.applied_at||null,
+    cancelledAt:  l.cancelled_at||null, cancelReason: l.cancel_reason||'',
+    processedAt:  l.approved2_at||l.approved1_at||l.rejected2_at||l.rejected1_at||null,
+    days: (l.dates||[]).length,
+    note:        rejectNote||approve2Note||approve1Note||'',
+    approveNote: approve2Note||approve1Note||'',
   };
 }
 function normalizeNotif(n) {
@@ -455,12 +433,6 @@ async function loadAllData() {
     try{ const cal2=await api('GET',`calendar?year=${yr+1}`);
          calStore[String(yr+1)]=Object.entries(cal2||{}).map(([date,description])=>({date,description})); }catch(_){calStore[String(yr+1)]=[]}
     S('ess5_calendar',calStore);
-    const sampleLeave = G('ess5_leaves',[]).find(l=>l.status==='approved'||l.status==='rejected');
-    if(sampleLeave) console.log('Sample leave from DB:',JSON.stringify({
-      id:sampleLeave.id, status:sampleLeave.status,
-      appliedAt:sampleLeave.appliedAt, approved1At:sampleLeave.approved1At,
-      approve1Note:sampleLeave.approve1Note, note:sampleLeave.note
-    }));
     console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:G('ess5_leaves',[]).length});
   } catch(e){ toast('⚠ Gagal memuat data: '+e.message); console.error(e); }
 }
@@ -1538,7 +1510,7 @@ function renderAdminLeaves(){
         <td style="white-space:nowrap">${formatDates(l.dates)}</td><td><b>${wdays}</b></td>
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
-        <td style="color:var(--text2);font-size:11px;max-width:160px;white-space:normal;word-break:break-word">${l.cancelReason?("Batal: "+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||"-")}</td></tr>`;
+        <td style="color:var(--text2);font-size:11px;max-width:130px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||'-')}</td></tr>`;
     }).join('')}</tbody></table></div></div>`;
 }
 
@@ -2166,7 +2138,7 @@ async function processAppr(lid,action){
     if(!l.approvals.includes(CE.nik))l.approvals.push(CE.nik);
     if(myLvl>=maxLvl){
       apiAction=myLvl===1?'approve1':'approve2';
-      l.status='approved';l.note=note;l.approveNote=note;l.approve1Note=myLvl===1?note:'';l.approve2Note=myLvl===2?note:'';l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
+      l.status='approved';l.note=note;l.approve1Note=myLvl===1?note:'';l.approve2Note=myLvl===2?note:'';l.approveNote=note;l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
       if(myLvl===1)l.approved1At=new Date().toISOString();
       else l.approved2At=new Date().toISOString();
       const days=l.days||countWorkdays(l.dates||[]);
@@ -2414,7 +2386,7 @@ function renderSupLeaveLog(){
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
         <td style="font-size:12px;color:var(--text2)">${l.processedAt?fmtDate(l.processedAt):'-'}</td>
-        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?'Batal: '+l.cancelReason:l.note||'-'}</td>
+        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||'-')}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
@@ -2562,11 +2534,8 @@ function closeMo(e){if(e&&e.target!==document.getElementById('mo'))return;docume
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}
 function fmtDate(iso){
   if(!iso||iso===''||iso==='null'||iso==='undefined')return '-';
-  // Handle ISO datetime string (2026-08-11T00:00:00)
-  const clean=String(iso).trim();
-  // Try parse as-is first
-  let d=new Date(clean);
-  // If invalid, try adding time component
+  const clean=String(iso).replace('T',' ').replace('Z','').trim();
+  let d=new Date(iso); // Try ISO parse first
   if(isNaN(d.getTime()))d=new Date(clean+' 12:00:00');
   if(isNaN(d.getTime()))return '-';
   const dd=String(d.getDate()).padStart(2,'0');
