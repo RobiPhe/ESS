@@ -376,8 +376,9 @@ function normalizeSup(s) {
   return { id: s.id, nik: s.nik, dept: s.dept, level: s.level, position: s.position, name: s.name };
 }
 function normalizeLeave(l) {
-  const a1n=l.approve1_note||'';
-  const a2n=l.approve2_note||'';
+  // Kalau approve sudah terjadi (ada approved_at) tapi note kosong → default 'Disetujui'
+  const a1n = l.approved1_at ? (l.approve1_note || 'Disetujui') : (l.approve1_note || '');
+  const a2n = l.approved2_at ? (l.approve2_note || 'Disetujui') : (l.approve2_note || '');
   return {
     id: l.id, empNik: l.emp_nik, leaveType: l.leave_type,
     dates: l.dates||[], reason: l.reason||'', status: l.status,
@@ -432,18 +433,7 @@ async function loadAllData() {
     try{ const cal2=await api('GET',`calendar?year=${yr+1}`);
          calStore[String(yr+1)]=Object.entries(cal2||{}).map(([date,description])=>({date,description})); }catch(_){calStore[String(yr+1)]=[]}
     S('ess5_calendar',calStore);
-    // Debug: tampilkan nilai approve1_note dari DB
-    const dbLeaves = G('ess5_leaves',[]);
-    const approvedLeaf = dbLeaves.find(l=>l.status==='approved'||l.status==='cancelled');
-    if(approvedLeaf){
-      console.log('=== DEBUG LEAVE DATA ===');
-      console.log('approve1Note:', JSON.stringify(approvedLeaf.approve1Note));
-      console.log('approveNote:', JSON.stringify(approvedLeaf.approveNote));
-      console.log('note:', JSON.stringify(approvedLeaf.note));
-      console.log('approved1At:', approvedLeaf.approved1At);
-      console.log('full object keys:', Object.keys(approvedLeaf));
-    }
-    console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:dbLeaves.length});
+    console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:G('ess5_leaves',[]).length});
   } catch(e){ toast('⚠ Gagal memuat data: '+e.message); console.error(e); }
 }
 
@@ -1380,9 +1370,9 @@ function lcHTML(l,showActions){
   // Kumpulkan catatan approval dari DB fields
   const approvalNotes=[];
   if(l.reject1Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver1Name||'L1',note:l.reject1Reason});
-  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:l.approve1Note||'Disetujui'});
+  else if(l.approved1At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver1Name||'L1',note:l.approve1Note&&l.approve1Note!==''?l.approve1Note:'Disetujui'});
   if(l.reject2Reason)approvalNotes.push({cls:'c-red',ico:'✗',who:l.approver2Name||'L2',note:l.reject2Reason});
-  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:l.approve2Note||'Disetujui'});
+  else if(l.approved2At)approvalNotes.push({cls:'c-green',ico:'✓',who:l.approver2Name||'L2',note:l.approve2Note&&l.approve2Note!==''?l.approve2Note:'Disetujui'});
   const noteText=l.note||'';
   return `<div class="lc">
     <div class="lc-hdr">
@@ -1520,7 +1510,7 @@ function renderAdminLeaves(){
         <td style="white-space:nowrap">${formatDates(l.dates)}</td><td><b>${wdays}</b></td>
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
-        <td style="color:var(--text2);font-size:11px;max-width:130px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||'-')}</td></tr>`;
+        <td style="color:var(--text2);font-size:11px;max-width:130px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||(l.approve2Note&&l.approve2Note!==''?l.approve2Note:null)||(l.approve1Note&&l.approve1Note!==''?l.approve1Note:null)||(l.approved1At?'Disetujui':'-'))}</td></tr>`;
     }).join('')}</tbody></table></div></div>`;
 }
 
@@ -2398,7 +2388,7 @@ function renderSupLeaveLog(){
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
         <td style="font-size:12px;color:var(--text2)">${l.processedAt?fmtDate(l.processedAt):'-'}</td>
-        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||'-')}</td>
+        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||(l.approve2Note&&l.approve2Note!==''?l.approve2Note:null)||(l.approve1Note&&l.approve1Note!==''?l.approve1Note:null)||(l.approved1At?'Disetujui':'-'))}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
