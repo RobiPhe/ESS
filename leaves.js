@@ -105,13 +105,13 @@ module.exports = async function handler(req, res) {
         update = {
           status:        hasL2 ? 'approved1' : 'approved',
           approved1_at:  now,
-          approve1_note: note,   // ← SIMPAN CATATAN APPROVE LEVEL 1
+          approve1_note: note || 'Disetujui',  // default 'Disetujui' jika kosong
         };
       } else if (action === 'approve2') {
         update = {
           status:        'approved',
           approved2_at:  now,
-          approve2_note: note,   // ← SIMPAN CATATAN APPROVE LEVEL 2
+          approve2_note: note || 'Disetujui',  // default 'Disetujui' jika kosong
         };
       } else if (action === 'reject1') {
         update = {
