@@ -432,7 +432,18 @@ async function loadAllData() {
     try{ const cal2=await api('GET',`calendar?year=${yr+1}`);
          calStore[String(yr+1)]=Object.entries(cal2||{}).map(([date,description])=>({date,description})); }catch(_){calStore[String(yr+1)]=[]}
     S('ess5_calendar',calStore);
-    console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:G('ess5_leaves',[]).length});
+    // Debug: tampilkan nilai approve1_note dari DB
+    const dbLeaves = G('ess5_leaves',[]);
+    const approvedLeaf = dbLeaves.find(l=>l.status==='approved'||l.status==='cancelled');
+    if(approvedLeaf){
+      console.log('=== DEBUG LEAVE DATA ===');
+      console.log('approve1Note:', JSON.stringify(approvedLeaf.approve1Note));
+      console.log('approveNote:', JSON.stringify(approvedLeaf.approveNote));
+      console.log('note:', JSON.stringify(approvedLeaf.note));
+      console.log('approved1At:', approvedLeaf.approved1At);
+      console.log('full object keys:', Object.keys(approvedLeaf));
+    }
+    console.log('✓ Data loaded:',{emps:G('ess5_emps',[]).length,leaves:dbLeaves.length});
   } catch(e){ toast('⚠ Gagal memuat data: '+e.message); console.error(e); }
 }
 
@@ -2119,8 +2130,8 @@ function openApprModal(lid,action){
 
 async function processAppr(lid,action){
   const noteRaw=document.getElementById('mo-note').value.trim();
-  // Approve tanpa catatan → default 'Disetujui' agar selalu tampil di karyawan
-  const note=(action==='approve')?(noteRaw||'Disetujui'):noteRaw;
+  // Kalau approve tanpa catatan, default ke 'Disetujui' agar selalu tampil
+  const note=action==='approve'?(noteRaw||'Disetujui'):noteRaw;
   const leaves=G('ess5_leaves',[]);const idx=leaves.findIndex(l=>l.id===lid);if(idx<0)return;
   const l=leaves[idx];if(!l.approvals)l.approvals=[];
   const sups=G('ess5_sups',[]);const emps=G('ess5_emps',[]);
