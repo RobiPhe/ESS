@@ -2109,7 +2109,7 @@ function openApprModal(lid,action){
     <div class="modal-sub">${e.name} — ${l.leaveType} (${countWorkdays(l.dates||[])} hr kerja) | ${formatDates(l.dates)}</div>
     <div class="alert ${action==='approve'?'a-ok':'a-warn'}">${action==='approve'?'✓ Anda akan menyetujui pengajuan ini.':'✗ Anda akan menolak pengajuan ini.'}</div>
     <div class="field"><label>Catatan</label>
-      <textarea id="mo-note" style="width:100%;height:75px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none" placeholder="Catatan (opsional)..."></textarea>
+      <textarea id="mo-note" style="width:100%;height:75px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none" placeholder="Catatan untuk karyawan (kosongkan untuk 'Disetujui')"></textarea>
     </div>
     <div class="modal-foot">
       <button class="btn ${cls}" onclick="processAppr('${lid}','${action}')">Proses Sekarang</button>
@@ -2118,7 +2118,9 @@ function openApprModal(lid,action){
 }
 
 async function processAppr(lid,action){
-  const note=document.getElementById('mo-note').value;
+  const noteRaw=document.getElementById('mo-note').value.trim();
+  // Kalau approve tanpa catatan, default ke 'Disetujui' agar selalu tampil
+  const note=action==='approve'?(noteRaw||'Disetujui'):noteRaw;
   const leaves=G('ess5_leaves',[]);const idx=leaves.findIndex(l=>l.id===lid);if(idx<0)return;
   const l=leaves[idx];if(!l.approvals)l.approvals=[];
   const sups=G('ess5_sups',[]);const emps=G('ess5_emps',[]);
