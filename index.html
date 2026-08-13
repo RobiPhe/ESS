@@ -2119,8 +2119,8 @@ function openApprModal(lid,action){
 
 async function processAppr(lid,action){
   const noteRaw=document.getElementById('mo-note').value.trim();
-  // Kalau approve tanpa catatan, default ke 'Disetujui' agar selalu tampil
-  const note=action==='approve'?(noteRaw||'Disetujui'):noteRaw;
+  // Approve tanpa catatan → default 'Disetujui' agar selalu tampil di karyawan
+  const note=(action==='approve')?(noteRaw||'Disetujui'):noteRaw;
   const leaves=G('ess5_leaves',[]);const idx=leaves.findIndex(l=>l.id===lid);if(idx<0)return;
   const l=leaves[idx];if(!l.approvals)l.approvals=[];
   const sups=G('ess5_sups',[]);const emps=G('ess5_emps',[]);
@@ -2387,7 +2387,7 @@ function renderSupLeaveLog(){
         <td><span class="badge ${cat.cls}">${cat.lbl}</span></td>
         <td><span class="badge ${sb}">${sl}</span></td>
         <td style="font-size:12px;color:var(--text2)">${l.processedAt?fmtDate(l.processedAt):'-'}</td>
-        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?'Batal: '+l.cancelReason:l.note||'-'}</td>
+        <td style="font-size:12px;color:var(--text2);max-width:140px">${l.cancelReason?('Batal: '+l.cancelReason):(l.reject2Reason||l.reject1Reason||l.approve2Note||l.approve1Note||'-')}</td>
       </tr>`;
     }).join('')}</tbody>
   </table></div></div>`;
