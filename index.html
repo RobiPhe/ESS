@@ -473,7 +473,7 @@ function leaveGapWD(appliedAt,dates){
   while(c<end){const ds=c.toISOString().split('T')[0];if(isWorkday(ds))n++;c.setDate(c.getDate()+1)}
   return n;
 }
-function leaveCategory(l){const gap=leaveGapWD(l.appliedAt,l.dates);return gap>=6?{lbl:'Cuti Terencana',cls:'b-planned'}:{lbl:'Potong Cuti',cls:'b-deduct'}}
+function leaveCategory(l){const gap=leaveGapWD(l.appliedAt,l.dates);return gap>6?{lbl:'Cuti Terencana',cls:'b-planned'}:{lbl:'Potong Cuti',cls:'b-deduct'}}
 function getCalStatus(){
   const now=new Date();const y=now.getFullYear();const m=now.getMonth();const ny=y+1;const cal=G('ess5_calendar',{});
   if(m>=10&&!cal[ny])return{cls:'cal-warn',txt:`⚠ Kalender ${ny} belum diinput`};
@@ -694,7 +694,7 @@ function refreshBadge(){
     const unread=G('ess5_notifs',[]).filter(n=>n.targetNik===CE.nik&&!n.read).length;
     const dot=document.getElementById('bell-dot');if(dot)dot.classList.toggle('show',unread>0);
     const badge=document.getElementById('approval-badge');
-    if(badge){const cnt=getPendingApprovals().length;badge.textContent=cnt;badge.classList.toggle('show',cnt>0)}
+    if(badge){const cnt=getPendingApprovals().length;badge.textContent=cnt>0?cnt:'';badge.classList.toggle('show',cnt>0)}
   }
   // Calendar indicator — employee admin role no longer exists, this is handled per-context
 }
@@ -1361,10 +1361,10 @@ function renderLeave(){
 }
 
 function lcHTML(l,showActions){
-  const sbMap={pending:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'};
-  const slMap={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
+  const sbMap={pending:'b-pending',approved1:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'};
+  const slMap={pending:'Menunggu',approved1:'Menunggu L2',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
   const cat=leaveCategory(l);const wdays=countWorkdays(l.dates||[]);
-  const canCancel=showActions&&(l.status==='pending'||l.status==='approved');
+  const canCancel=showActions&&(l.status==='pending'||l.status==='approved1'||l.status==='approved');
   const atasanName=l.approver1Name||l.supervisorName||'-';
   // Kumpulkan catatan approval dari DB fields
   const approvalNotes=[];
@@ -1438,14 +1438,24 @@ function getPendingApprovals(){
   const sups=G('ess5_sups',[]);const emps=G('ess5_emps',[]);
   const myDepts=sups.filter(s=>s.nik===CE.nik).map(s=>s.dept);
   return G('ess5_leaves',[]).filter(l=>{
-    if(l.status!=='pending') return false;
+    // L1 lihat: status pending, milik karyawan dept sendiri, bukan diri sendiri
+    // L2 lihat: status approved1 (L1 sudah approve, giliran L2)
+    if(l.status!=='pending'&&l.status!=='approved1') return false;
     const e=emps.find(x=>x.nik===l.empNik);
     if(!e||!myDepts.includes(e.dept)||l.empNik===CE.nik) return false;
-    const ds=sups.filter(s=>s.dept===e.dept).sort((a,b)=>a.level-b.level);
-    const mine=sups.find(s=>s.nik===CE.nik&&s.dept===e.dept);if(!mine) return false;
-    if(mine.level===1) return !l.approvals||!l.approvals.some(a=>ds.find(s=>s.nik===a&&s.level===1));
-    const lvl1=ds.find(s=>s.level===1);
-    return lvl1&&l.approvals&&l.approvals.includes(lvl1.nik)&&!l.approvals.includes(CE.nik);
+    const mine=sups.find(s=>s.nik===CE.nik&&s.dept===e.dept);
+    if(!mine) return false;
+    if(mine.level===1){
+      // L1 hanya lihat yang status pending & belum di-approve L1
+      return l.status==='pending'&&!(l.approvals||[]).includes(CE.nik);
+    } else {
+      // L2 lihat yang status approved1 (L1 sudah approve) ATAU pending tanpa L1
+      if(l.status==='approved1') return !(l.approvals||[]).includes(CE.nik);
+      // Kalau tidak ada L1 di dept ini, L2 juga lihat pending langsung
+      const ds=sups.filter(s=>s.dept===e.dept).sort((a,b)=>a.level-b.level);
+      const hasL1=ds.some(s=>s.level===1);
+      return !hasL1&&l.status==='pending'&&!(l.approvals||[]).includes(CE.nik);
+    }
   });
 }
 
@@ -1457,6 +1467,7 @@ function renderApproval(){
   el.innerHTML=mine.map(l=>{
     const e=emps.find(x=>x.nik===l.empNik)||{name:'-',annY1:0,annY2:0,annY3:0,bigLeave:0};
     const cat=leaveCategory(l);const wdays=countWorkdays(l.dates||[]);
+    const statusLbl=l.status==='approved1'?'<span class="badge b-yellow" style="font-size:10px">L1 ✓ Menunggu L2</span>':'<span class="badge b-pending" style="font-size:10px">Menunggu</span>';
     return `<div class="lc">
       <div class="lc-hdr">
         <div>
@@ -2010,7 +2021,7 @@ async function doCancel(id){
   const reason=document.getElementById('cancel-reason').value.trim();
   if(!reason)return toast('Isi alasan pembatalan');
   const leaves=G('ess5_leaves',[]);const idx=leaves.findIndex(l=>l.id===id);if(idx<0)return;
-  const l=leaves[idx];const wasApproved=l.status==='approved';
+  const l=leaves[idx];const wasApproved=(l.status==='approved'); // approved1 belum potong saldo, tidak perlu kembalikan
   try{
     await api('PUT','leaves',{id,action:'cancel',reason});
     l.status='cancelled';l.cancelReason=reason;l.cancelledAt=new Date().toISOString();
@@ -2038,23 +2049,8 @@ async function doCancel(id){
 }
 function openLeaveForm(){
   const sups=G('ess5_sups',[]);
-  // Cek apakah karyawan ini sendiri adalah Level 1 di dept-nya
-  const iAmL1=sups.some(s=>s.dept===CE.dept&&s.nik===CE.nik&&s.level===1);
-  const iAmL2=sups.some(s=>s.dept===CE.dept&&s.nik===CE.nik&&s.level===2);
-  let opts='';
-  if(iAmL1){
-    // Karyawan adalah L1 → skip L1, langsung pilih L2 sebagai approver
-    const lvl2=sups.filter(s=>s.dept===CE.dept&&s.nik!==CE.nik&&s.level===2);
-    opts=lvl2.length
-      ?lvl2.map(s=>`<option value="${s.nik}">${s.name} (${s.position||'L2'})</option>`).join('')
-      :'<option value="">-- Tidak ada atasan Level 2 --</option>';
-  } else {
-    // Karyawan biasa → pilih L1 (kecuali diri sendiri)
-    const lvl1=sups.filter(s=>s.dept===CE.dept&&s.nik!==CE.nik&&s.level===1);
-    opts=lvl1.length
-      ?lvl1.map(s=>`<option value="${s.nik}">${s.name} (${s.position||'L1'})</option>`).join('')
-      :'<option value="">-- Tidak ada atasan --</option>';
-  }
+  const lvl1=sups.filter(s=>s.dept===CE.dept&&s.nik!==CE.nik&&s.level===1);
+  const opts=lvl1.length?lvl1.map(s=>`<option value="${s.nik}">${s.name} (${s.position||'L1'})</option>`).join(''):'<option value="">-- Tidak ada atasan Level 1 --</option>';
   const today=new Date().toISOString().split('T')[0];const ann=totalAnn(CE);
   openMo(`<div class="modal-title">Ajukan Cuti</div>
     <div class="modal-sub">Ann: <b>${ann} hr</b> (Y1:${CE.annY1||0} Y2:${CE.annY2||0} <span style="color:var(--red)">Y3:${CE.annY3||0}</span>) | Besar: <b>${CE.bigLeave||0} hr</b></div>
@@ -2100,14 +2096,11 @@ async function submitLeave(){
   const bal=type==='Cuti Tahunan'?totalAnn(CE):(CE.bigLeave||0);
   if(wdays>bal)return toast(`Saldo ${type} tidak cukup (${bal} hr tersisa)`);
   const sups=G('ess5_sups',[]);const sd=sups.find(s=>s.nik===sup);
-  // Kalau karyawan adalah L1, approver yang dipilih adalah L2
-  // Jadi tidak perlu approver2 lagi (sudah di-handle oleh L2 sebagai approver1)
-  const iAmL1=sups.some(s=>s.dept===CE.dept&&s.nik===CE.nik&&s.level===1);
-  const lvl2=iAmL1?null:sups.find(s=>s.dept===CE.dept&&s.level===2&&s.nik!==sup);
+  const lvl2=sups.find(s=>s.dept===CE.dept&&s.level===2&&s.nik!==sup);
   try{
     const result=await api('POST','leaves',{
       emp_nik:CE.nik,leave_type:type,dates,reason,
-      approver1_nik:sup,approver1_name:sd?.name||'-',approver1_pos:sd?.position||(iAmL1?'L2':'L1'),
+      approver1_nik:sup,approver1_name:sd?.name||'-',approver1_pos:sd?.position||'L1',
       approver2_nik:lvl2?.nik||null,approver2_name:lvl2?.name||null,approver2_pos:lvl2?.position||null
     });
     const newLeave={id:result.id,empNik:CE.nik,leaveType:type,dates,days:wdays,reason,
@@ -2157,23 +2150,33 @@ async function processAppr(lid,action){
     if(!l.approvals.includes(CE.nik))l.approvals.push(CE.nik);
     if(myLvl>=maxLvl){
       apiAction=myLvl===1?'approve1':'approve2';
-      l.status='approved';l.note=note;l.approveNote=note;l.approve1Note=myLvl===1?note:'';l.approve2Note=myLvl===2?note:'';l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
+      // Kalau L1 approve dan masih ada L2 (maxLvl>1), status jadi approved1 bukan approved
+      const finalStatus=(myLvl===1&&maxLvl>1)?'approved1':'approved';
+      l.status=finalStatus;l.note=note;l.approveNote=note;l.approve1Note=myLvl===1?note:'';l.approve2Note=myLvl===2?note:'';l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
       if(myLvl===1)l.approved1At=new Date().toISOString();
       else l.approved2At=new Date().toISOString();
-      const days=l.days||countWorkdays(l.dates||[]);
-      const ei=emps.findIndex(x=>x.nik===l.empNik);
-      if(ei>=0){
-        if(l.leaveType==='Cuti Tahunan'){
-          emps[ei]=deductAnn(emps[ei],days);
-          balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};
-        } else if(l.leaveType==='Cuti Besar'){
-          emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-days);
-          balUpdate={nik:emps[ei].nik,bigLeave:emps[ei].bigLeave};
-          api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:days,note:`Digunakan — pengajuan ${l.id.slice(0,12)}`}).catch(()=>{});
+      // Potong saldo HANYA kalau sudah final approved (bukan approved1)
+      if(finalStatus==='approved'){
+        const days=l.days||countWorkdays(l.dates||[]);
+        const ei=emps.findIndex(x=>x.nik===l.empNik);
+        if(ei>=0){
+          if(l.leaveType==='Cuti Tahunan'){
+            emps[ei]=deductAnn(emps[ei],days);
+            balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};
+          } else if(l.leaveType==='Cuti Besar'){
+            emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-days);
+            balUpdate={nik:emps[ei].nik,bigLeave:emps[ei].bigLeave};
+            api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:days,note:`Digunakan — pengajuan ${l.id.slice(0,12)}`}).catch(()=>{});
+          }
+          S('ess5_emps',emps);if(emps[ei].nik===CE.nik)CE=emps[ei];
         }
-        S('ess5_emps',emps);if(emps[ei].nik===CE.nik)CE=emps[ei];
+        pushNotif(l.empNik,'✅ Cuti Disetujui',`${l.leaveType} ${formatDates(l.dates)} disetujui sepenuhnya!`,l.id);
+      } else {
+        // approved1: notif ke L2 untuk approve selanjutnya
+        const nextSup=ds.find(s=>s.level===myLvl+1);
+        if(nextSup)pushNotif(nextSup.nik,'🔔 Perlu Approval Anda',`${e.name} mengajukan ${l.leaveType}. Level 1 sudah approve.`,l.id);
+        pushNotif(l.empNik,'Cuti Disetujui Level 1',`${l.leaveType} Anda disetujui ${CE.name}. Menunggu approval Level 2.`,l.id);
       }
-      pushNotif(l.empNik,'✅ Cuti Disetujui',`${l.leaveType} ${formatDates(l.dates)} disetujui sepenuhnya!`,l.id);
     } else {
       apiAction='approve1';l.note=note;
       l.approved1At=new Date().toISOString();
@@ -2379,8 +2382,8 @@ function renderSupLeaveLog(){
     return;
   }
 
-  const sbMap={pending:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'};
-  const slMap={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
+  const sbMap={pending:'b-pending',approved1:'b-pending',approved:'b-approved',rejected:'b-rejected',cancelled:'b-cancelled'};
+  const slMap={pending:'Menunggu',approved1:'Menunggu L2',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
 
   el.innerHTML=`<div class="tw-wrap"><div class="tw-scroll"><table>
     <thead><tr>
@@ -2414,7 +2417,7 @@ function renderSupLeaveLog(){
 function exportSupLeaveLog(){
   const sups=G('ess5_sups',[]);const myDepts=sups.filter(s=>s.nik===CE.nik).map(s=>s.dept);
   const emps=G('ess5_emps',[]);const now=new Date();const curYear=now.getFullYear();
-  const slMap={pending:'Menunggu',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
+  const slMap={pending:'Menunggu',approved1:'Menunggu L2',approved:'Disetujui',rejected:'Ditolak',cancelled:'Dibatalkan'};
   const leaves=G('ess5_leaves',[]).filter(l=>{
     const e=emps.find(x=>x.nik===l.empNik);
     if(!e||!myDepts.includes(e.dept)) return false;
