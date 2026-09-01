@@ -1,4 +1,4 @@
-// api/leaves.js
+// api/leaves.js — Self-contained, no _db.js dependency
 const { createClient } = require('@supabase/supabase-js');
 
 function getDB() {
@@ -17,7 +17,7 @@ module.exports = async function handler(req, res) {
   const supabase = getDB();
 
   try {
-    // ── GET ──────────────────────────────────────────────────────────────
+    // ── GET ──────────────────────────────────────────────
     if (req.method === 'GET') {
       const { empNik, all, approverNik } = req.query;
 
@@ -47,6 +47,7 @@ module.exports = async function handler(req, res) {
           .from('employees').select('nik,dept').in('dept', depts);
         const niks = (deptEmps || []).map(e => e.nik);
         if (!niks.length) return res.status(200).json([]);
+        // L1 lihat 'pending', L2 lihat 'approved1'
         const { data: leaves, error } = await supabase
           .from('leaves').select('*')
           .in('emp_nik', niks)
@@ -59,7 +60,7 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({ error: 'Parameter kurang' });
     }
 
-    // ── POST ─────────────────────────────────────────────────────────────
+    // ── POST: Ajukan cuti baru ────────────────────────────
     if (req.method === 'POST') {
       const body = req.body || {};
       const {
@@ -76,63 +77,85 @@ module.exports = async function handler(req, res) {
 
       const { error } = await supabase.from('leaves').insert({
         id, emp_nik, leave_type, dates, reason, status,
-        approver1_nik, approver1_name, approver1_pos,
-        approver2_nik: approver2_nik || null,
+        approver1_nik,
+        approver1_name,
+        approver1_pos,
+        approver2_nik:  approver2_nik  || null,
         approver2_name: approver2_name || null,
-        approver2_pos: approver2_pos || null,
-        approve1_note: '',
-        approve2_note: '',
+        approver2_pos:  approver2_pos  || null,
+        approve1_note:  '',
+        approve2_note:  '',
       });
       if (error) throw error;
       return res.status(201).json({ ok: true, id });
     }
 
-    // ── PUT ──────────────────────────────────────────────────────────────
+    // ── PUT: Approve / Reject / Cancel ───────────────────
     if (req.method === 'PUT') {
       const { id, action, reason } = req.body || {};
       if (!id || !action)
         return res.status(400).json({ error: 'ID dan action wajib' });
 
-      const now = new Date().toISOString();
+      const now  = new Date().toISOString();
       const note = (reason || '').trim();
       let update = {};
 
       if (action === 'approve1') {
-        // Cek apakah ada level 2
+        // Cek apakah ada approver level 2
         const { data: lvArr } = await supabase
-          .from('leaves').select('approver2_nik').eq('id', id).limit(1);
+          .from('leaves')
+          .select('approver2_nik')
+          .eq('id', id)
+          .limit(1);
         const hasL2 = !!(lvArr?.[0]?.approver2_nik);
+
         update = {
-          status: hasL2 ? 'approved1' : 'approved',
-          approved1_at: now,
+          // Kalau ada L2 → status approved1 (tunggu L2)
+          // Kalau tidak ada L2 → langsung approved
+          status:        hasL2 ? 'approved1' : 'approved',
+          approved1_at:  now,
           approve1_note: note || 'Disetujui',
         };
       } else if (action === 'approve2') {
         update = {
-          status: 'approved',
-          approved2_at: now,
+          status:        'approved',
+          approved2_at:  now,
           approve2_note: note || 'Disetujui',
         };
       } else if (action === 'reject1') {
-        update = { status: 'rejected', rejected1_at: now, reject1_reason: note };
+        update = {
+          status:         'rejected',
+          rejected1_at:   now,
+          reject1_reason: note,
+        };
       } else if (action === 'reject2') {
-        update = { status: 'rejected', rejected2_at: now, reject2_reason: note };
+        update = {
+          status:         'rejected',
+          rejected2_at:   now,
+          reject2_reason: note,
+        };
       } else if (action === 'cancel') {
-        update = { status: 'cancelled', cancelled_at: now, cancel_reason: note };
+        update = {
+          status:        'cancelled',
+          cancelled_at:  now,
+          cancel_reason: note,
+        };
       } else {
         return res.status(400).json({ error: 'Action tidak dikenal: ' + action });
       }
 
-      const { error } = await supabase.from('leaves').update(update).eq('id', id);
+      const { error } = await supabase
+        .from('leaves').update(update).eq('id', id);
       if (error) throw error;
       return res.status(200).json({ ok: true });
     }
 
-    // ── DELETE ───────────────────────────────────────────────────────────
+    // ── DELETE ────────────────────────────────────────────
     if (req.method === 'DELETE') {
       const { id } = req.query;
       if (!id) return res.status(400).json({ error: 'ID wajib' });
-      const { error } = await supabase.from('leaves').delete().eq('id', id);
+      const { error } = await supabase
+        .from('leaves').delete().eq('id', id);
       if (error) throw error;
       return res.status(200).json({ ok: true });
     }
