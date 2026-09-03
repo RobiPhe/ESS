@@ -498,6 +498,12 @@ function restoreAnn(e,days){
   return e;
 }
 
+function bigAccrualDate(permanentDate, cycle){
+  // Akrual tiap 3 tahun dari tanggal jadi karyawan tetap
+  const d = new Date(permanentDate + ' 12:00:00');
+  return new Date(d.getFullYear() + (cycle * 3), d.getMonth(), 1);
+}
+
 function bigExpiryDate(ad){
   // Hangus 3 tahun dari bulan akrual, bulan yang SAMA (tidak +1 bulan)
   return new Date(ad.getFullYear()+3, ad.getMonth(), 1);
