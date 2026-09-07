@@ -515,21 +515,68 @@ function bigWarningDate(exp){
 }
 
 function checkBigLeaveAccrual(){
-  const now=new Date();const emps=G('ess5_emps',[]);let changed=false;
+  const now=new Date();
+  const emps=G('ess5_emps',[]);
+  const biglog=G('ess5_biglog',[]);
+  let changed=false;
+
   emps.forEach((e,i)=>{
     if(!e.permanentDate||e.status!=='tetap')return;
+
     for(let c=1;c<=20;c++){
-      const ad=bigAccrualDate(e.permanentDate,c);if(ad>now)break;
-      const key=`bac_${e.nik}_c${c}`;if(sfGet(key))continue;
-      const alreadyLogged=G('ess5_biglog',[]).some(l=>l.empNik===e.nik&&l.type==='accrual'&&l.note&&l.note.includes(`siklus ke-${c}`));
-      if(alreadyLogged){sfSet(key);continue;}
+      const ad=bigAccrualDate(e.permanentDate,c);
+      // Belum waktunya akrual
+      if(ad>now)break;
+
+      const key=`bac_${e.nik}_c${c}`;
+      if(sfGet(key))continue;
+
+      // Cek apakah siklus ini sudah pernah di-log di biglog DB
+      const alreadyLogged=biglog.some(l=>
+        l.empNik===e.nik &&
+        l.type==='accrual' &&
+        l.note &&
+        l.note.includes(`siklus ke-${c}`)
+      );
+
+      if(alreadyLogged){
+        sfSet(key);
+        continue;
+      }
+
+      // Cek apakah ada log apapun untuk karyawan ini di biglog
+      // Kalau tidak ada log SAMA SEKALI → data lama/manual → jangan akrual
+      const hasAnyLog=biglog.some(l=>l.empNik===e.nik);
+
+      // Kalau tidak ada log SAMA SEKALI untuk karyawan ini
+      // kemungkinan besar saldo bigLeave adalah data historis yang diinput manual
+      // Tandai semua cycle yang sudah lewat sebagai historis, jangan akrual lagi
+      if(!hasAnyLog){
+        sfSet(key);
+        // Buat log marker di DB agar tidak diproses ulang session berikutnya
+        api('POST','biglog',{
+          emp_nik:e.nik,type:'accrual',amount:0,
+          note:`Akrual cuti besar siklus ke-${c} (data historis)`,
+          log_date:ad.toISOString().split('T')[0]
+        }).catch(()=>{});
+        continue;
+      }
+
+      // Akrual baru yang valid
       emps[i].bigLeave=(emps[i].bigLeave||0)+6;
       api('PUT','balance',{nik:e.nik,big_leave:emps[i].bigLeave}).catch(()=>{});
-      api('POST','biglog',{emp_nik:e.nik,type:'accrual',amount:6,note:`Akrual cuti besar siklus ke-${c}`,log_date:ad.toISOString().split('T')[0]}).catch(()=>{});
-      pushNotif(e.nik,'🎉 Cuti Besar Bertambah',`Saldo cuti besar Anda bertambah 6 hari — siklus ke-${c}.`,null);
-      sfSet(key);changed=true;
+      api('POST','biglog',{
+        emp_nik:e.nik,type:'accrual',amount:6,
+        note:`Akrual cuti besar siklus ke-${c}`,
+        log_date:ad.toISOString().split('T')[0]
+      }).catch(()=>{});
+      pushNotif(e.nik,'🎉 Cuti Besar Bertambah',
+        `Saldo cuti besar Anda bertambah 6 hari — siklus ke-${c}.`,null);
+      sfSet(key);
+      changed=true;
     }
   });
+
   if(changed)S('ess5_emps',emps);
 }
 function checkBigLeaveExpiry(){
