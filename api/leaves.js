@@ -100,27 +100,43 @@ module.exports = async function handler(req, res) {
       const note = (reason || '').trim();
       let update = {};
 
-      if (action === 'approve1') {
-        // Cek apakah ada approver level 2
-        const { data: lvArr } = await supabase
-          .from('leaves')
-          .select('approver2_nik')
-          .eq('id', id)
-          .limit(1);
-        const hasL2 = !!(lvArr?.[0]?.approver2_nik);
+      const isApprovalAction = ['approve1', 'approve2', 'reject1', 'reject2'].includes(action);
 
+      // Pesan/komentar WAJIB untuk approve & tolak (level 1 dan 2)
+      if (isApprovalAction && !note)
+        return res.status(400).json({ error: 'Pesan/komentar wajib diisi' });
+
+      // Ambil kondisi pengajuan saat ini (validasi tahap approval)
+      const { data: curArr, error: curErr } = await supabase
+        .from('leaves')
+        .select('status,approver2_nik')
+        .eq('id', id)
+        .limit(1);
+      if (curErr) throw curErr;
+      if (!curArr || !curArr.length)
+        return res.status(404).json({ error: 'Pengajuan tidak ditemukan' });
+      const cur = curArr[0];
+
+      // Level 1 hanya boleh memproses yang masih 'pending',
+      // Level 2 hanya boleh memproses yang sudah 'approved1'
+      if ((action === 'approve1' || action === 'reject1') && cur.status !== 'pending')
+        return res.status(409).json({ error: 'Pengajuan sudah diproses (status: ' + cur.status + ')' });
+      if ((action === 'approve2' || action === 'reject2') && cur.status !== 'approved1')
+        return res.status(409).json({ error: 'Pengajuan belum disetujui level 1 atau sudah diproses (status: ' + cur.status + ')' });
+
+      if (action === 'approve1') {
+        // Ada approver level 2? → approved1 (tunggu L2), kalau tidak → langsung approved
+        const hasL2 = !!cur.approver2_nik;
         update = {
-          // Kalau ada L2 → status approved1 (tunggu L2)
-          // Kalau tidak ada L2 → langsung approved
           status:        hasL2 ? 'approved1' : 'approved',
           approved1_at:  now,
-          approve1_note: note || 'Disetujui',
+          approve1_note: note,
         };
       } else if (action === 'approve2') {
         update = {
           status:        'approved',
           approved2_at:  now,
-          approve2_note: note || 'Disetujui',
+          approve2_note: note,
         };
       } else if (action === 'reject1') {
         update = {
@@ -147,7 +163,8 @@ module.exports = async function handler(req, res) {
       const { error } = await supabase
         .from('leaves').update(update).eq('id', id);
       if (error) throw error;
-      return res.status(200).json({ ok: true });
+      // Kembalikan status final agar frontend konsisten dengan DB
+      return res.status(200).json({ ok: true, status: update.status });
     }
 
     // ── DELETE ────────────────────────────────────────────
