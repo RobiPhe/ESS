@@ -506,13 +506,25 @@ function bigAccrualDate(permanentDate, cycle){
 }
 
 function bigExpiryDate(ad){
-  // Hangus 3 tahun dari bulan akrual, bulan yang SAMA (tidak +1 bulan)
-  return new Date(ad.getFullYear()+3, ad.getMonth(), 1);
+  // Hangus di AKHIR DESEMBER pada tahun ke-3 sejak hak timbul (tahun akrual + 3), bulan akrual berapa pun
+  return new Date(ad.getFullYear()+3, 11, 31, 23, 59, 59);
 }
 
 function bigWarningDate(exp){
-  // Warning H-1 bulan sebelum expiry
-  return new Date(exp.getFullYear(), exp.getMonth()-1, 1);
+  // Peringatan mulai 1 November pada tahun hangus
+  return new Date(exp.getFullYear(), 10, 1);
+}
+
+// Siklus cuti besar terbaru yang haknya sudah timbul (null kalau belum ada)
+function bigLatestCycle(e, now){
+  if(!e.permanentDate||e.status!=='tetap') return null;
+  let latest=null;
+  for(let c=1;c<=20;c++){
+    const ad=bigAccrualDate(e.permanentDate,c);
+    if(ad>now) break;
+    latest={cycle:c,accrual:ad,expiry:bigExpiryDate(ad)};
+  }
+  return latest;
 }
 
 function checkBigLeaveAccrual(){
@@ -563,8 +575,19 @@ function checkBigLeaveAccrual(){
         continue;
       }
 
-      // Akrual baru yang valid
-      emps[i].bigLeave=(emps[i].bigLeave||0)+6;
+      // Akrual baru yang valid.
+      // Siklus sebelumnya SELALU sudah hangus (hangus ≤ 3 thn, akrual berikutnya 5 thn),
+      // jadi sisa saldo lama dihanguskan dulu → tidak ada akumulasi jadi 12 hari.
+      const leftover=c>1?(emps[i].bigLeave||0):0;
+      if(leftover>0){
+        api('POST','biglog',{
+          emp_nik:e.nik,type:'expired',amount:leftover,
+          note:`${leftover} hari saldo cuti besar siklus ke-${c-1} hangus (31 Desember ${bigExpiryDate(bigAccrualDate(e.permanentDate,c-1)).getFullYear()})`,
+          log_date:ad.toISOString().split('T')[0]
+        }).catch(()=>{});
+      }
+      const base=c>1?0:(emps[i].bigLeave||0);
+      emps[i].bigLeave=base+6;
       api('PUT','balance',{nik:e.nik,big_leave:emps[i].bigLeave}).catch(()=>{});
       api('POST','biglog',{
         emp_nik:e.nik,type:'accrual',amount:6,
@@ -580,46 +603,50 @@ function checkBigLeaveAccrual(){
 
   if(changed)S('ess5_emps',emps);
 }
+
 function checkBigLeaveExpiry(){
   const now=new Date();const emps=G('ess5_emps',[]);let changed=false;
   emps.forEach((e,i)=>{
-    if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0)return;
-    for(let c=1;c<=20;c++){
-      const ad=bigAccrualDate(e.permanentDate,c);if(ad>now)break;
-      const exp=bigExpiryDate(ad);
-      if(now.getFullYear()===exp.getFullYear()&&now.getMonth()===exp.getMonth()){
-        const key=`bexp_${e.nik}_c${c}_${exp.getFullYear()}`;
-        const alreadyLogged=G('ess5_biglog',[]).some(l=>l.empNik===e.nik&&l.type==='expired');
-        if(!sfGet(key)&&!alreadyLogged&&(emps[i].bigLeave||0)>0){
-          const expired=emps[i].bigLeave;emps[i].bigLeave=0;
-          api('PUT','balance',{nik:e.nik,big_leave:0}).catch(()=>{});
-          api('POST','biglog',{emp_nik:e.nik,type:'expired',amount:expired,note:`${expired} hari saldo cuti besar hangus`}).catch(()=>{});
-          sfSet(key);changed=true;
-          pushNotif(e.nik,'⚠️ Cuti Besar Hangus',`${expired} hari saldo cuti besar hangus per ${exp.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}.`,null);
-          G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>pushNotif(u.nik,'Info: Cuti Besar Hangus',`${e.name} (${e.nik}): ${expired} hari cuti besar hangus.`,null));
-        }
-      }
-    }
+    if((e.bigLeave||0)<=0)return;
+    // Saldo cuti besar selalu milik siklus terbaru yang sudah timbul
+    const cur=bigLatestCycle(e,now);
+    if(!cur||now<=cur.expiry)return;   // belum lewat 31 Desember tahun ke-3
+    const key=`bexp_${e.nik}_c${cur.cycle}`;
+    const alreadyLogged=G('ess5_biglog',[]).some(l=>
+      l.empNik===e.nik&&l.type==='expired'&&l.note&&l.note.includes(`siklus ke-${cur.cycle} `));
+    if(sfGet(key)||alreadyLogged)return;
+    const expired=emps[i].bigLeave;emps[i].bigLeave=0;
+    const yr=cur.expiry.getFullYear();
+    api('PUT','balance',{nik:e.nik,big_leave:0}).catch(()=>{});
+    api('POST','biglog',{emp_nik:e.nik,type:'expired',amount:expired,
+      note:`${expired} hari saldo cuti besar siklus ke-${cur.cycle} hangus (31 Desember ${yr})`,
+      log_date:`${yr}-12-31`}).catch(()=>{});
+    sfSet(key);changed=true;
+    pushNotif(e.nik,'⚠️ Cuti Besar Hangus',`${expired} hari saldo cuti besar hangus per 31 Desember ${yr}.`,null);
+    G('ess5_sysusers',[]).filter(u=>u.role==='admin').forEach(u=>pushNotif(u.nik,'Info: Cuti Besar Hangus',`${e.name} (${e.nik}): ${expired} hari cuti besar hangus.`,null));
   });
   if(changed)S('ess5_emps',emps);
 }
+
 function checkBigLeaveWarning(){
-  const now=new Date();const emps=G('ess5_emps',[]);
+  const now=new Date();
+  if(now.getMonth()!==10)return;   // peringatan hanya di bulan November
+  const yr=now.getFullYear();const emps=G('ess5_emps',[]);
   emps.forEach(e=>{
-    if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0)return;
-    for(let c=1;c<=20;c++){
-      const ad=bigAccrualDate(e.permanentDate,c);if(ad>now)break;
-      const exp=bigExpiryDate(ad);const warn=bigWarningDate(exp);
-      if(now.getFullYear()===warn.getFullYear()&&now.getMonth()===warn.getMonth()){
-        const key=`bwarn_${e.nik}_c${c}_${warn.getFullYear()}${warn.getMonth()}`;
-        if(!sfGet(key)){
-          api('POST','biglog',{emp_nik:e.nik,type:'notif',amount:e.bigLeave,note:`Peringatan 1 bulan sebelum hangus`}).catch(()=>{});
-          sfSet(key);
-          pushNotif(e.nik,'⚠️ Peringatan Cuti Besar',`${e.bigLeave} hari saldo cuti besar akan hangus bulan depan. Segera ajukan!`,null);
-          G('ess5_sups',[]).filter(s=>s.dept===e.dept).forEach(s=>pushNotif(s.nik,'Peringatan Cuti Besar Bawahan',`${e.name}: ${e.bigLeave} hari cuti besar akan hangus bulan depan.`,null));
-        }
-      }
-    }
+    if((e.bigLeave||0)<=0)return;
+    const cur=bigLatestCycle(e,now);
+    if(!cur||cur.expiry.getFullYear()!==yr)return;   // hanya yang hangus akhir Desember tahun ini
+    const key=`bwarn_${e.nik}_c${cur.cycle}_${yr}`;
+    if(sfGet(key))return;
+    const tag=`siklus ke-${cur.cycle}, tahun ${yr}`;
+    const already=G('ess5_biglog',[]).some(l=>l.empNik===e.nik&&l.type==='notif'&&l.note&&l.note.includes(tag));
+    sfSet(key);
+    if(already)return;
+    api('POST','biglog',{emp_nik:e.nik,type:'notif',amount:e.bigLeave,
+      note:`Peringatan November: ${e.bigLeave} hari cuti besar hangus 31 Desember (${tag})`}).catch(()=>{});
+    pushNotif(e.nik,'⚠️ Peringatan Cuti Besar',
+      `${e.bigLeave} hari saldo cuti besar Anda akan hangus pada 31 Desember ${yr}. Segera gunakan sebelum hangus!`,null);
+    G('ess5_sups',[]).filter(s=>s.dept===e.dept).forEach(s=>pushNotif(s.nik,'Peringatan Cuti Besar Bawahan',`${e.name}: ${e.bigLeave} hari cuti besar akan hangus 31 Desember ${yr}.`,null));
   });
 }
 function checkDecWarnings(){
@@ -1101,13 +1128,9 @@ function renderAdmDashboard(){
     const n=new Date();
     return emps.filter(e=>{
       if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0)return false;
-      for(let c=1;c<=20;c++){
-        const ad=bigAccrualDate(e.permanentDate,c);if(ad>n)break;
-        const exp=bigExpiryDate(ad);
-        const diff=(exp-n)/(86400000*30);
-        if(diff>=0&&diff<=2)return true;
-      }
-      return false;
+      const cur=bigLatestCycle(e,n);if(!cur)return false;
+      const diff=(cur.expiry-n)/(86400000*30);
+      return diff>=0&&diff<=2;
     }).length;
   })();
 
@@ -1192,13 +1215,9 @@ function renderAdmDashboard(){
     const n=new Date();
     return emps.filter(e=>{
       if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0)return false;
-      for(let c=1;c<=20;c++){
-        const ad=bigAccrualDate(e.permanentDate,c);if(ad>n)break;
-        const exp=bigExpiryDate(ad);
-        const diff=(exp-n)/(86400000*30);
-        if(diff>=0&&diff<=3)return true;
-      }
-      return false;
+      const cur=bigLatestCycle(e,n);if(!cur)return false;
+      const diff=(cur.expiry-n)/(86400000*30);
+      return diff>=0&&diff<=3;
     }).slice(0,6);
   })();
 
@@ -1382,6 +1401,9 @@ function renderDash(){
   const dec=document.getElementById('dec-alerts');dec.innerHTML='';
   if(now.getMonth()===11&&(CE.annY3||0)>0)
     dec.innerHTML=`<div class="dec-warn">⚠️ <strong>${CE.annY3} hari</strong> saldo cuti tahunan Y3 Anda akan <strong>hangus 31 Desember ${now.getFullYear()}</strong>. Segera ajukan cuti!</div>`;
+  const bigCur=bigLatestCycle(CE,now);
+  if((CE.bigLeave||0)>0&&bigCur&&bigCur.expiry.getFullYear()===now.getFullYear()&&now.getMonth()>=10)
+    dec.innerHTML+=`<div class="dec-warn">⚠️ <strong>${CE.bigLeave} hari</strong> saldo cuti besar Anda akan <strong>hangus 31 Desember ${now.getFullYear()}</strong>. Segera gunakan sebelum hangus!</div>`;
   const cb=document.getElementById('cal-banner');cb.innerHTML='';
   document.getElementById('dash-stats').innerHTML=`
     <div class="stat-card"><div class="stat-label">Total Cuti Tahunan</div><div class="stat-val c-blue">${totalAnn(CE)}<span class="stat-unit">hr</span></div>
@@ -1481,16 +1503,22 @@ function apStepsHTML(l){
 
 function getPendingApprovals(){
   const sups=G('ess5_sups',[]);const emps=G('ess5_emps',[]);
-  const myDepts=sups.filter(s=>s.nik===CE.nik).map(s=>s.dept);
+  // Berdasarkan data dari DB (status + approver1_nik / approver2_nik), BUKAN array in-memory
   return G('ess5_leaves',[]).filter(l=>{
-    if(l.status!=='pending'&&l.status!=='approved1') return false;
-    const e=emps.find(x=>x.nik===l.empNik);
-    if(!e||!myDepts.includes(e.dept)||l.empNik===CE.nik) return false;
-    const ds=sups.filter(s=>s.dept===e.dept).sort((a,b)=>a.level-b.level);
-    const mine=sups.find(s=>s.nik===CE.nik&&s.dept===e.dept);if(!mine) return false;
-    if(mine.level===1) return !l.approvals||!l.approvals.some(a=>ds.find(s=>s.nik===a&&s.level===1));
-    const lvl1=ds.find(s=>s.level===1);
-    return lvl1&&l.approvals&&l.approvals.includes(lvl1.nik)&&!l.approvals.includes(CE.nik);
+    if(l.empNik===CE.nik) return false;
+    const e=emps.find(x=>x.nik===l.empNik);if(!e) return false;
+    const mine=sups.find(s=>s.nik===CE.nik&&s.dept===e.dept);
+    if(l.status==='pending'){
+      // Menunggu approval pertama
+      if(l.approver1Nik) return l.approver1Nik===CE.nik;
+      return !!mine&&mine.level===1;
+    }
+    if(l.status==='approved1'){
+      // Sudah disetujui level 1 → tampil di level 2
+      if(l.approver2Nik) return l.approver2Nik===CE.nik;
+      return !!mine&&mine.level===2;
+    }
+    return false;
   });
 }
 
@@ -1728,14 +1756,10 @@ function getFilteredEmps(){
     if(empFilters._qf==='y2'&&(e.annY2||0)===0) return false;
     if(empFilters._qf==='big_expiring'){
       if(!e.permanentDate||e.status!=='tetap'||(e.bigLeave||0)===0) return false;
-      let found=false;
-      for(let c=1;c<=20;c++){
-        const ad=bigAccrualDate(e.permanentDate,c);if(ad>now) break;
-        const exp=bigExpiryDate(ad);
-        const diff=(exp-now)/(86400000*30);
-        if(diff>=0&&diff<=2){found=true;break}
-      }
-      if(!found) return false;
+      const cur=bigLatestCycle(e,now);
+      if(!cur) return false;
+      const diff=(cur.expiry-now)/(86400000*30);
+      if(!(diff>=0&&diff<=2)) return false;
     }
     if(empFilters.nik&&!e.nik.toLowerCase().includes(empFilters.nik.toLowerCase())) return false;
     if(empFilters.name&&!e.name.toLowerCase().includes(empFilters.name.toLowerCase())) return false;
@@ -2167,79 +2191,87 @@ function openApprModal(lid,action){
   openMo(`<div class="modal-title">Konfirmasi ${lbl} Cuti</div>
     <div class="modal-sub">${e.name} — ${l.leaveType} (${countWorkdays(l.dates||[])} hr kerja) | ${formatDates(l.dates)}</div>
     <div class="alert ${action==='approve'?'a-ok':'a-warn'}">${action==='approve'?'✓ Anda akan menyetujui pengajuan ini.':'✗ Anda akan menolak pengajuan ini.'}</div>
-    <div class="field"><label>Catatan</label>
-      <textarea id="mo-note" style="width:100%;height:75px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none" placeholder="Catatan untuk karyawan (kosongkan untuk 'Disetujui')"></textarea>
+    <div class="field"><label>Pesan / Komentar <span style="color:var(--red)">* wajib diisi</span></label>
+      <textarea id="mo-note" oninput="checkApprNote()" style="width:100%;height:75px;resize:vertical;background:var(--input-bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-family:'DM Sans',sans-serif;outline:none" placeholder="Tulis pesan/komentar untuk karyawan (wajib)"></textarea>
     </div>
     <div class="modal-foot">
-      <button class="btn ${cls}" onclick="processAppr('${lid}','${action}')">Proses Sekarang</button>
+      <button class="btn ${cls}" id="mo-proc" disabled style="opacity:.5;cursor:not-allowed" onclick="processAppr('${lid}','${action}')">Proses Sekarang</button>
       <button class="btn btn-ghost" onclick="closeMo()">Batal</button>
     </div>`);
 }
+function checkApprNote(){
+  const t=document.getElementById('mo-note'),b=document.getElementById('mo-proc');
+  if(!t||!b)return;
+  const ok=t.value.trim().length>0;
+  b.disabled=!ok;b.style.opacity=ok?'':'.5';b.style.cursor=ok?'':'not-allowed';
+}
 
 async function processAppr(lid,action){
-  const noteRaw=document.getElementById('mo-note').value.trim();
-  // Kalau approve tanpa catatan, default ke 'Disetujui' agar selalu tampil
-  const note=action==='approve'?(noteRaw||'Disetujui'):noteRaw;
-  const leaves=G('ess5_leaves',[]);const idx=leaves.findIndex(l=>l.id===lid);if(idx<0)return;
-  const l=leaves[idx];if(!l.approvals)l.approvals=[];
+  const noteEl=document.getElementById('mo-note');
+  const note=(noteEl?noteEl.value:'').trim();
+  if(!note)return toast('Pesan/komentar wajib diisi');   // guard: tidak bisa ditembus tanpa isi pesan
+  const leaves=G('ess5_leaves',[]);const l=leaves.find(x=>x.id===lid);if(!l)return;
+  if(l.status!=='pending'&&l.status!=='approved1')return toast('Pengajuan ini sudah diproses');
   const sups=G('ess5_sups',[]);const emps=G('ess5_emps',[]);
-  const e=emps.find(x=>x.nik===l.empNik)||{dept:''};
-  const ds=sups.filter(s=>s.dept===e.dept).sort((a,b)=>a.level-b.level);
-  const maxLvl=ds.length?Math.max(...ds.map(s=>s.level)):1;
-  const myLvl=sups.find(s=>s.nik===CE.nik&&s.dept===e.dept)?.level||1;
-  let apiAction,balUpdate=null;
+  const e=emps.find(x=>x.nik===l.empNik)||{name:'-',dept:''};
+  const stage=l.status==='approved1'?2:1;            // tahap berdasarkan status di DB
+  const apiAction=(action==='approve'?'approve':'reject')+stage;
+  const btn=document.getElementById('mo-proc');if(btn)btn.disabled=true;
+
+  // 1) Simpan ke server dulu — status final ditentukan server
+  let res;
+  try{
+    res=await api('PUT','leaves',{id:lid,action:apiAction,approver_nik:CE.nik,reason:note});
+  }catch(err){
+    toast('Gagal: '+err.message);
+    if(/sudah diproses|status/i.test(err.message||'')){
+      await loadAllData();closeMo();renderApproval();
+    } else if(btn) btn.disabled=false;
+    return;
+  }
+  const newStatus=res.status||(action==='reject'?'rejected':((stage===2||!l.approver2Nik)?'approved':'approved1'));
+
+  // 2) Update state lokal
+  const nowIso=new Date().toISOString();
+  l.status=newStatus;l.note=note;l.processedAt=nowIso;l.processedBy=CE.nik;
+  if(!l.approvals)l.approvals=[];
+  let balUpdate=null;
   if(action==='reject'){
-    apiAction=myLvl===1?'reject1':'reject2';
-    l.status='rejected';l.note=note;l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
-    if(myLvl===1){l.rejected1At=new Date().toISOString();l.reject1Reason=note||'';}
-    else{l.rejected2At=new Date().toISOString();l.reject2Reason=note||'';}
-    pushNotif(l.empNik,'Cuti Ditolak',`${l.leaveType} ${formatDates(l.dates)} ditolak oleh ${CE.name}. Catatan: ${note||'-'}`,l.id);
+    if(stage===1){l.rejected1At=nowIso;l.reject1Reason=note;}
+    else{l.rejected2At=nowIso;l.reject2Reason=note;}
+    pushNotif(l.empNik,'Cuti Ditolak',`${l.leaveType} ${formatDates(l.dates)} ditolak oleh ${CE.name}. Catatan: ${note}`,l.id);
   } else {
     if(!l.approvals.includes(CE.nik))l.approvals.push(CE.nik);
-    if(myLvl>=maxLvl){
-      apiAction=myLvl===1?'approve1':'approve2';
-      const finalStatus=(myLvl===1&&maxLvl>1)?'approved1':'approved';
-      l.status=finalStatus;l.note=note;l.approveNote=note;
-      l.approve1Note=myLvl===1?note:'';l.approve2Note=myLvl===2?note:'';
-      l.processedAt=new Date().toISOString();l.processedBy=CE.nik;
-      if(myLvl===1)l.approved1At=new Date().toISOString();
-      else l.approved2At=new Date().toISOString();
-      // Potong saldo HANYA kalau final approved (bukan approved1 tunggu L2)
-      if(finalStatus==='approved'){
-        const days=l.days||countWorkdays(l.dates||[]);
-        const ei=emps.findIndex(x=>x.nik===l.empNik);
-        if(ei>=0){
-          if(l.leaveType==='Cuti Tahunan'){
-            emps[ei]=deductAnn(emps[ei],days);
-            balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};
-          } else if(l.leaveType==='Cuti Besar'){
-            emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-days);
-            balUpdate={nik:emps[ei].nik,bigLeave:emps[ei].bigLeave};
-            api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:days,note:`Digunakan — pengajuan ${l.id.slice(0,12)}`}).catch(()=>{});
-          }
-          S('ess5_emps',emps);if(emps[ei].nik===CE.nik)CE=emps[ei];
+    l.approveNote=note;
+    if(stage===1){l.approved1At=nowIso;l.approve1Note=note;}
+    else{l.approved2At=nowIso;l.approve2Note=note;}
+    if(newStatus==='approved'){
+      // Potong saldo HANYA saat approval final
+      const days=l.days||countWorkdays(l.dates||[]);
+      const ei=emps.findIndex(x=>x.nik===l.empNik);
+      if(ei>=0){
+        if(l.leaveType==='Cuti Tahunan'){
+          emps[ei]=deductAnn(emps[ei],days);
+          balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};
+        } else if(l.leaveType==='Cuti Besar'){
+          emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-days);
+          balUpdate={nik:emps[ei].nik,bigLeave:emps[ei].bigLeave};
+          api('POST','biglog',{emp_nik:l.empNik,type:'used',amount:days,note:`Digunakan — pengajuan ${l.id.slice(0,12)}`}).catch(()=>{});
         }
-        pushNotif(l.empNik,'✅ Cuti Disetujui',`${l.leaveType} ${formatDates(l.dates)} disetujui sepenuhnya!`,l.id);
-      } else {
-        // approved1: beritahu L2
-        const nextSup=ds.find(s=>s.level===myLvl+1);
-        if(nextSup)pushNotif(nextSup.nik,'🔔 Perlu Approval Anda',`${e.name} mengajukan ${l.leaveType}. Level 1 sudah approve.`,l.id);
-        pushNotif(l.empNik,'Cuti Disetujui Level 1',`${l.leaveType} Anda disetujui ${CE.name}. Menunggu approval Level 2.`,l.id);
+        S('ess5_emps',emps);if(emps[ei].nik===CE.nik)CE=emps[ei];
       }
+      pushNotif(l.empNik,'✅ Cuti Disetujui',`${l.leaveType} ${formatDates(l.dates)} disetujui sepenuhnya! Catatan: ${note}`,l.id);
     } else {
-      apiAction='approve1';l.note=note;
-      l.approved1At=new Date().toISOString();
-      const nextSup=ds.find(s=>s.level===myLvl+1);
-      if(nextSup)pushNotif(nextSup.nik,'🔔 Perlu Approval Anda',`${e.name} mengajukan ${l.leaveType}. Level 1 sudah approve.`,l.id);
-      pushNotif(l.empNik,'Cuti Disetujui Level 1',`${l.leaveType} Anda disetujui ${CE.name}. Menunggu approval Level 2.`,l.id);
+      // approved1 → beritahu atasan level 2
+      const l2nik=l.approver2Nik||(sups.find(s=>s.dept===e.dept&&s.level===2)||{}).nik;
+      if(l2nik)pushNotif(l2nik,'🔔 Perlu Approval Anda',`${e.name} mengajukan ${l.leaveType}. Level 1 sudah approve.`,l.id);
+      pushNotif(l.empNik,'Cuti Disetujui Level 1',`${l.leaveType} Anda disetujui ${CE.name}. Menunggu approval Level 2. Catatan: ${note}`,l.id);
     }
   }
-  try{
-    await api('PUT','leaves',{id:lid,action:apiAction,approver_nik:CE.nik,reason:note});
-    if(balUpdate)apiUpdateEmp(balUpdate.nik,balUpdate).catch(()=>{});
-    S('ess5_leaves',leaves);closeMo();
-    toast(action==='approve'?'Diproses ✓':'Ditolak');renderApproval();
-  }catch(e){toast('Gagal: '+e.message);}
+  if(balUpdate)apiUpdateEmp(balUpdate.nik,balUpdate).catch(()=>{});
+  S('ess5_leaves',leaves);closeMo();
+  toast(action==='approve'?(newStatus==='approved'?'Cuti disetujui ✓':'Diteruskan ke Level 2 ✓'):'Cuti ditolak');
+  renderApproval();
 }
 async function doBulkUpdate(){
   const days=parseInt(document.getElementById('bulk-days').value);
