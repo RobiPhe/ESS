@@ -102,7 +102,7 @@ input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ac
 .filter-row input,.filter-row select{width:100%;padding:5px 8px;font-size:11px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);outline:none}
 .filter-row input:focus,.filter-row select:focus{border-color:var(--accent2)}
 .filter-row input[type=date]{min-width:0;width:100%;font-size:10px}
-.op-wrap{display:flex;gap:3px}.op-wrap select{width:52px;flex-shrink:0;padding:5px 4px}.op-wrap input{flex:1}
+.op-wrap{display:flex;gap:3px;min-width:132px}.op-wrap select{width:52px;flex-shrink:0;padding:5px 4px}.op-wrap input{flex:1;min-width:64px;width:64px;-moz-appearance:textfield}.op-wrap input::-webkit-outer-spin-button,.op-wrap input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .lc{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:15px 17px;margin-bottom:8px;transition:border-color var(--tr)}
 .lc:hover{border-color:var(--border2)}
 .lc-hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -388,6 +388,7 @@ function normalizeLeave(l) {
     approved2At: l.approved2_at||null, rejected2At: l.rejected2_at||null,
     reject2Reason: l.reject2_reason||'', approve2Note: a2n,
     appliedAt: l.applied_at||null,
+    usedY1: l.used_y1==null?null:l.used_y1, usedY2: l.used_y2==null?null:l.used_y2, usedY3: l.used_y3==null?null:l.used_y3,
     cancelledAt: l.cancelled_at||null, cancelReason: l.cancel_reason||'',
     processedAt: l.approved2_at||l.approved1_at||l.rejected2_at||l.rejected1_at||null,
     days: (l.dates||[]).length,
@@ -1781,7 +1782,7 @@ function renderAdminEmp(){
         <th><select onchange="setEF('dept',this.value)"><option value="">Semua</option>${depts.map(d=>`<option ${empFilters.dept===d?'selected':''}>${d}</option>`).join('')}</select></th>
         <th><select onchange="setEF('status',this.value)"><option value="">Semua</option><option value="kontrak" ${empFilters.status==='kontrak'?'selected':''}>Kontrak</option><option value="tetap" ${empFilters.status==='tetap'?'selected':''}>Tetap</option></select></th>
         <th><input placeholder="Username..." oninput="setEF('username',this.value)" data-fkey="f_username" value="${empFilters.username||''}"></th>
-        <th>${opw('annY1')}</th><th>${opw('annY2')}</th><th>${opw('annY3')}</th><th>${opw('bigLeave')}</th>
+        <th style="min-width:140px">${opw('annY1')}</th><th style="min-width:140px">${opw('annY2')}</th><th style="min-width:140px">${opw('annY3')}</th><th style="min-width:140px">${opw('bigLeave')}</th>
         <th><div style="display:flex;flex-direction:column;gap:3px">
           <input type="date" style="font-size:10px;padding:3px 4px;width:100%" onchange="setEF('joinFrom',this.value)" value="${empFilters.joinFrom||''}">
           <input type="date" style="font-size:10px;padding:3px 4px;width:100%" onchange="setEF('joinTo',this.value)" value="${empFilters.joinTo||''}">
@@ -1794,12 +1795,12 @@ function renderAdminEmp(){
       </tr>
     </thead>
     <tbody>${filtered.map(e=>{
-      const u=users.find(x=>x.nik===e.nik)||{username:'-'};const sel=selectedNiks.includes(e.nik);
+      const u={username:e.username||(users.find(x=>x.nik===e.nik)||{}).username||'-'};const sel=selectedNiks.includes(e.nik);
       return `<tr>
         <td class="chk-col"><input type="checkbox" ${sel?'checked':''} onchange="toggleSelect('${e.nik}',this)"></td>
         <td>${e.nik}</td><td>${e.name}</td><td>${e.dept}</td>
         <td style="text-transform:capitalize">${e.status}</td>
-        <td class="c-blue">${u.username}</td>
+        <td class="c-blue" style="font-weight:600;white-space:nowrap">${u.username}</td>
         <td class="saldo-y1">${e.annY1||0}</td><td class="saldo-y2">${e.annY2||0}</td>
         <td class="saldo-y3">${e.annY3||0}</td><td class="saldo-big">${e.bigLeave||0}</td>
         <td style="font-size:12px;color:var(--text2)">${fmtDate(e.joinDate)}</td>
@@ -2136,7 +2137,15 @@ async function doCancel(id){
       const emps=G('ess5_emps',[]);const ei=emps.findIndex(e=>e.nik===l.empNik);
       if(ei>=0){
         if(l.leaveType==='Cuti Tahunan'){
-          emps[ei]=restoreAnn(emps[ei],l.days||countWorkdays(l.dates||[]));
+          if(l.usedY1!=null&&l.usedY2!=null&&l.usedY3!=null){
+            // Kembalikan persis ke bucket asal pemotongan
+            emps[ei].annY3=(emps[ei].annY3||0)+l.usedY3;
+            emps[ei].annY2=(emps[ei].annY2||0)+l.usedY2;
+            emps[ei].annY1=(emps[ei].annY1||0)+l.usedY1;
+          } else {
+            // Data lama tanpa rincian → fallback ke Y1
+            emps[ei]=restoreAnn(emps[ei],l.days||countWorkdays(l.dates||[]));
+          }
           apiUpdateEmp(emps[ei].nik,{annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3});
         } else if(l.leaveType==='Cuti Besar'){
           const d=l.days||countWorkdays(l.dates||[]);
@@ -2268,9 +2277,20 @@ async function processAppr(lid,action){
   const btn=document.getElementById('mo-proc');if(btn)btn.disabled=true;
 
   // 1) Simpan ke server dulu — status final ditentukan server
+  // Rincian pemotongan saldo per bucket (Y3→Y2→Y1) — disimpan di DB agar pembatalan mengembalikan ke bucket yang sama
+  let usedPlan=null;
+  if(action==='approve'&&l.leaveType==='Cuti Tahunan'&&(stage===2||!l.approver2Nik)){
+    const e0=emps.find(x=>x.nik===l.empNik);
+    if(e0){
+      const d0=l.days||countWorkdays(l.dates||[]);
+      const sim=deductAnn({...e0},d0);
+      usedPlan={y3:(e0.annY3||0)-sim.annY3,y2:(e0.annY2||0)-sim.annY2,y1:(e0.annY1||0)-sim.annY1};
+    }
+  }
   let res;
   try{
-    res=await api('PUT','leaves',{id:lid,action:apiAction,approver_nik:CE.nik,reason:note});
+    res=await api('PUT','leaves',{id:lid,action:apiAction,approver_nik:CE.nik,reason:note,
+      ...(usedPlan?{used_y1:usedPlan.y1,used_y2:usedPlan.y2,used_y3:usedPlan.y3}:{})});
   }catch(err){
     toast('Gagal: '+err.message);
     if(/sudah diproses|status/i.test(err.message||'')){
@@ -2301,6 +2321,7 @@ async function processAppr(lid,action){
       if(ei>=0){
         if(l.leaveType==='Cuti Tahunan'){
           emps[ei]=deductAnn(emps[ei],days);
+          if(usedPlan){l.usedY1=usedPlan.y1;l.usedY2=usedPlan.y2;l.usedY3=usedPlan.y3;}
           balUpdate={nik:emps[ei].nik,annY1:emps[ei].annY1,annY2:emps[ei].annY2,annY3:emps[ei].annY3};
         } else if(l.leaveType==='Cuti Besar'){
           emps[ei].bigLeave=Math.max(0,(emps[ei].bigLeave||0)-days);
@@ -2422,7 +2443,7 @@ async function saveAddEmp(){
   }catch(e){toast('Gagal: '+e.message);}
 }
 function openEditEmp(nik){
-  const e=G('ess5_emps',[]).find(x=>x.nik===nik),u=G('ess5_users',[]).find(x=>x.nik===nik)||{},depts=G('ess5_depts',[]);
+  const e=G('ess5_emps',[]).find(x=>x.nik===nik),u={username:e.username||(G('ess5_users',[]).find(x=>x.nik===nik)||{}).username||''},depts=G('ess5_depts',[]);
   openMo(`<div class="modal-title">Edit Karyawan</div>
     <div class="modal-sub">NIK: ${nik} | Username: ${u.username||'-'}</div>
     <div class="field"><label>Nama</label><input type="text" id="ee-name" value="${e.name}"></div>
