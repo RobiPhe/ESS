@@ -130,13 +130,21 @@ module.exports = async function handler(req, res) {
             let add = Number(bulkPlan.amount || 0);
             if (e.join_date) {
               const jd = new Date(e.join_date + 'T12:00:00');
-              const elig = new Date(jd.getFullYear() + 1, jd.getMonth() + 1, 1);
-              if (elig.getFullYear() > currentYear) {
+              const eligYear = jd.getFullYear() + 1;
+              const eligMonth = jd.getMonth(); // 0 = Jan ... 11 = Des
+
+              if (eligYear > currentYear) {
+                // Belum genap 1 tahun di tahun ini (misal masuk 2026, hak baru timbul 2027)
                 add = 0;
-              } else if (elig.getFullYear() === currentYear) {
-                const ml = 12 - elig.getMonth();
-                add = Math.round((ml / 12) * add);
+              } else if (eligYear === currentYear) {
+                // Genap 1 tahun di tahun berjalan:
+                // Sisa bulan dihitung dari bulan timbul hak cuti (eligMonth) hingga Desember (12 - eligMonth)
+                // Jika sisa bulan >= kuota full year, dapat kuota penuh (contoh: masuk April 2026 -> hak timbul April 2027 -> sisa 9 bulan >= 6 hari -> dapat 6 hari)
+                // Jika sisa bulan < kuota full year, dapat sisa bulannya (contoh: masuk Okt 2026 -> hak timbul Okt 2027 -> sisa 3 bulan < 6 hari -> dapat 3 hari)
+                const sisaBulan = 12 - eligMonth;
+                add = Math.min(add, Math.max(0, sisaBulan));
               }
+              // Jika eligYear < currentYear -> sudah bekerja lebih dari 1 tahun penuh -> dapat full add
             }
             newY1 = Math.max(0, add);
           }
