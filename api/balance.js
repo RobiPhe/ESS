@@ -74,9 +74,17 @@ module.exports = async function handler(req, res) {
       const { action, dept, amount, year } = req.body || {};
 
       // ── AKSI 1: Rollover otomatis tahun baru (Y3 hangus, Y2->Y3, Y1->Y2, Y1=pending)
+      // Rollover HANYA boleh berjalan saat memasuki tahun baru (bulan Januari)
       if (action === 'rollover') {
         const now = new Date();
         const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth(); // 0 = Januari
+
+        // Jika belum masuk bulan Januari pada pergantian tahun baru, abaikan
+        if (currentMonth !== 0) {
+          return res.status(200).json({ ok: true, skipped: true, reason: 'Rollover hanya berjalan di bulan Januari saat tahun baru' });
+        }
+
         const targetDate = `${currentYear}-01-01`;
 
         // Cek apakah rollover tahun ini sudah dieksekusi di database

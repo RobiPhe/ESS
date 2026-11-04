@@ -644,10 +644,12 @@ function checkCalReminder(){
 async function yearShift(){
   const now = new Date();
   const cy = now.getFullYear();
+  // Rollover tahun baru hanya berjalan saat memasuki bulan Januari
+  if (now.getMonth() !== 0) return;
   // Jalankan pemeriksaan rollover tahun baru ke backend (DB Supabase)
   try {
     const res = await api('POST', 'balance', { action: 'rollover' });
-    if (res && res.ok && !res.alreadyDone) {
+    if (res && res.ok && !res.alreadyDone && !res.skipped) {
       console.log(`✓ Rollover tahun ${res.shiftedYear} berhasil dijalankan di DB. Hangus Y3: ${res.totalExpiredY3} hr.`);
       await loadAllData();
     }
@@ -2766,7 +2768,7 @@ async function processCSV(){
   const raw=document.getElementById('csv-manual').value.trim();
   if(!raw)return toast('Masukkan data CSV');
   const emps=G('ess5_emps',[]);const depts=G('ess5_depts',[]);
-  const toInsert=[];const newDepts=[];let skipped=0;
+  const toProcess=[];const newDepts=[];let skipped=0;
   const usedUsernames=new Set(emps.map(e=>e.username||autoUser(e.name,[])));
   raw.split('\n').filter(Boolean).forEach(line=>{
     const p=parseCSVLine(line);
@@ -2777,26 +2779,39 @@ async function processCSV(){
     const joinDate=(p[9]||'').trim()||null;
     const permanentDate=(p[10]||'').trim()||null;
     if(!nik||!name){skipped++;return;}
-    if(emps.find(e=>e.nik===nik)){skipped++;return;}
     let username=autoUser(name,[...usedUsernames]);
     let attempt=username;let counter=2;
     while(usedUsernames.has(attempt)){attempt=username+counter;counter++;}
     username=attempt;usedUsernames.add(username);
-    toInsert.push({nik,name,dept,status,join_date:joinDate,
+    toProcess.push({nik,name,dept,status,join_date:joinDate,
       permanent_date:status==='tetap'?(permanentDate||joinDate):null,
       ann_y1:y1,ann_y2:y2,ann_y3:y3,big_leave:big,username,password:'12345'});
     if(dept&&!depts.includes(dept)&&!newDepts.includes(dept))newDepts.push(dept);
   });
-  if(!toInsert.length)return toast(`Tidak ada data baru (${skipped} dilewati)`);
-  toast(`Mengupload ${toInsert.length} karyawan...`);
-  let added=0,failed=0,failedNames=[];
-  for(const emp of toInsert){
+  if(!toProcess.length)return toast(`Tidak ada data valid (${skipped} baris dilewati)`);
+  toast(`Memproses ${toProcess.length} data karyawan...`);
+  let added=0,updated=0,failed=0,failedNames=[];
+  for(const emp of toProcess){
+    const exists=emps.some(e=>e.nik===emp.nik);
     try{
-      await api('POST','employees',emp);
-      emps.push({nik:emp.nik,name:emp.name,dept:emp.dept,role:'employee',
-        annY1:emp.ann_y1,annY2:emp.ann_y2,annY3:emp.ann_y3,bigLeave:emp.big_leave,
-        status:emp.status,joinDate:emp.join_date,permanentDate:emp.permanent_date,username:emp.username});
-      added++;
+      if(exists){
+        // NIK sudah ada -> update data profil & saldo cuti
+        await api('PUT','employees',emp);
+        const idx=emps.findIndex(e=>e.nik===emp.nik);
+        if(idx>=0){
+          emps[idx]={...emps[idx],name:emp.name,dept:emp.dept,status:emp.status,
+            annY1:emp.ann_y1,annY2:emp.ann_y2,annY3:emp.ann_y3,bigLeave:emp.big_leave,
+            joinDate:emp.join_date,permanentDate:emp.permanent_date};
+        }
+        updated++;
+      }else{
+        // NIK baru -> insert baru
+        await api('POST','employees',emp);
+        emps.push({nik:emp.nik,name:emp.name,dept:emp.dept,role:'employee',
+          annY1:emp.ann_y1,annY2:emp.ann_y2,annY3:emp.ann_y3,bigLeave:emp.big_leave,
+          status:emp.status,joinDate:emp.join_date,permanentDate:emp.permanent_date,username:emp.username});
+        added++;
+      }
     }catch(e){failed++;failedNames.push(emp.name+' ('+e.message+')');}
   }
   S('ess5_emps',emps);
@@ -2807,9 +2822,9 @@ async function processCSV(){
   S('ess5_depts',depts);
   document.getElementById('csv-manual').value='';
   if(failed===0){
-    toast(`✓ ${added} karyawan ditambahkan${skipped?' ('+skipped+' dilewati)':''}${newDepts.length?' + '+newDepts.length+' dept baru':''}`);
+    toast(`✓ Sukses: ${added} baru, ${updated} diupdate${skipped?' ('+skipped+' baris dilewati)':''}`);
   }else{
-    toast(`✓ ${added} berhasil, ${failed} gagal: ${failedNames.slice(0,2).join(', ')}${failed>2?'...':''}`);
+    toast(`✓ ${added+updated} berhasil (${added} baru, ${updated} update), ${failed} gagal: ${failedNames.slice(0,2).join(', ')}`);
     console.error('Failed:',failedNames);
   }
   renderAdminEmp();
